@@ -38,10 +38,11 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Daily morning email: sync, compare last night with your 30-day baseline, list today's free blocks
 - [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
 - [x] Per-user send time and time zone
-- [ ] Daily plan: today's training intensity, recovery breaks and wind-down, placed in real free time
-- [ ] Confirm-then-schedule: confirmed blocks go to a dedicated "Recovery Lab" calendar and adapt to conflicts
-- [ ] Habit experiments end to end: pre-registered 2-4 week plans, adherence tracking, Bayesian analysis, quality report card, next-step advice
-- [ ] LLM layer: plain-language explanations and experiment drafts (numbers stay in code)
+- [ ] Daily planner: one focus a day (or "nothing to change"), placed in real free time
+- [ ] Accept / adjust / decline links; confirmed blocks go to a dedicated "Recovery Lab" calendar
+- [ ] Feedback loop: did the advice happen, and did it help?
+- [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
+- [ ] Adaptive personalization: structured AI memory computed in code
 - [ ] Hosted multi-user web app
 
 See [ROADMAP.md](ROADMAP.md) for the plan and the design behind each step.

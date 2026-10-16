@@ -1,31 +1,53 @@
 # Roadmap
 
-Recovery Lab is a personal coach that runs on your own data. Every day it tells you what to
-do, puts it into the free time on your calendar, and quietly learns what works for *your*
-body.
+Recovery Lab turns wearable data and your real calendar into action. It is built around
+two ideas:
 
-## Product shape: two layers
+- **A. Plan the day around your body and your schedule.** Each morning it judges what
+  intensity of training suits today, finds real free time in Google Calendar, and proposes
+  concrete blocks: training, a recovery break, a wind-down before bed. Once you confirm,
+  it creates them on your calendar and adjusts them when the day changes.
+- **B. Run your own habit experiments, properly.** You ask, for example, "Will skipping
+  coffee after 2pm improve my sleep?" Recovery Lab helps you set up a 2-4 week plan,
+  tracks whether you followed it, compares your sleep metrics, and tells you honestly
+  whether the data is strong enough to support a conclusion, and what to do next.
 
-| Layer | What the user sees | Why it matters |
-|---|---|---|
-| **Front: daily guidance and reminders** (core) | What to train today, the exact exercises, scheduled into a free slot of the calendar with a reminder | Useful every day. Needs no expertise and no logging |
-| **Back: experiments and pattern discovery** | An occasional "want to try this?" and later "here is what we found about you" | Makes the guidance personal over time, and is the reason to trust it |
+## Market context
 
-How the layers connect:
+**A.** Wearable coaching apps already read calendars to understand a user's schedule.
+Bevel, for example, reads Google and iCloud Calendar events; its official response to a user
+request says the ability to write events will come "in the future"
+([feedback thread](https://feedback.bevel.health/feature-requests/p/ios-calendar-google-calendar-integration),
+checked October 2026). Separate user requests ask for an adaptive training calendar. That
+makes **"from advice to confirmed time blocks that adapt to the day"** a concrete angle
+worth exploring. The space is not empty, and competitors may ship calendar writing at
+any time. What is harder to copy is the combination: recovery-aware planning, a
+confirmation step, rescheduling around conflicts, and personalization from experiments.
 
-1. **Recommendations double as experiments.** When the app decides *when* to schedule
-   training (morning or evening, say), it can alternate in an ABAB pattern. The user just
-   follows the calendar; WHOOP records what happened.
-2. **Findings feed back into recommendations.** "Evening training lowers your next-day HRV by
-   about 5 ms" turns into "schedule training before 18:00 when possible".
-3. **Passive first.** Prefer experiments whose adherence WHOOP or the calendar can verify on
+**B.** Many apps surface correlations ("on days you did X, your sleep was Y"). The
+difference here is the **whole experiment lifecycle**: a pre-registered design, guided
+execution, adherence tracking, a data-quality assessment and a recommended next step.
+Showing a correlation is not the goal.
+
+Re-check competitors before making public claims.
+
+## How A and B work together
+
+1. **A helps B get executed.** During an experiment, the daily plan shows today's condition
+   ("B day: no caffeine after 14:00") and can add a confirmed reminder to the calendar.
+2. **B's results improve A.** A finished experiment ("evening training lowers your next-day
+   HRV by about 5 ms") changes how A schedules things.
+3. **A's choices can be experiments.** When A decides *when* to schedule something
+   (training in the morning or the evening, an earlier or later wind-down), it can
+   alternate in blocks. The user just follows the calendar.
+4. **Passive first.** Prefer experiments whose adherence WHOOP or the calendar can verify on
    their own (bedtime, wake time, workout timing, naps, evening meetings). Experiments that
-   need self-reports (caffeine, alcohol, meals) are optional and ask a single yes/no a day.
+   need self-reports (caffeine, alcohol, meals) ask a single yes/no a day.
 
 ## Principles (unchanged)
 
-- **Code computes every number; the LLM never does.** The LLM picks exercises from a
-  reviewed library, words explanations and proposes experiment designs. Code validates the
+- **Code computes every number; the LLM never does.** The LLM words explanations, turns
+  a user's question into a structured experiment draft and describes proposed blocks. Code validates the
   structured output and checks that every number in the text appears in the input data.
 - **Correlation is labeled as correlation.** Only completed experiments produce causal claims.
 - **Privacy first.** Minimal data, encrypted credentials, calendar time blocks only, no
@@ -43,58 +65,124 @@ How the layers connect:
   synthetic data generator. The interval calibration still needs work: 90% credible
   intervals currently cover about 80-88% in simulation.
 
-## Phase 1: Training recommendations (rules only, no AI)
+## Phase A1: Daily plan (rules only, no AI, no sport-specific library)
 
-Goal: the daily email says what to train today, with concrete exercises.
+Goal: every morning, a short list of proposed blocks for today, each with a time slot and
+a reason, in the daily email.
 
-- **Training profile:** goal sport and block length (e.g. golf, 6 weeks), level, days per
-  week, session length, available equipment, injuries to avoid.
-- **Exercise library:** `data/exercises/<sport>.json`, reviewed and kept in git. Each exercise
-  has the quality it trains, equipment, steps, sets/reps, cues, common mistakes,
-  regression/progression, a no-equipment alternative, difficulty, contraindications and a
-  demo link (links only, no re-hosted videos). Start with **golf** (about 25-30 exercises).
-  Have a certified coach or physical therapist review it before others use it.
-- **Sport templates:** the qualities to build, weekly structure, block phases (base → build →
-  deload/retest), benchmark tests, simple fueling and recovery tips (no calorie targets).
-  Golf: rotational power, hip and thoracic mobility, core anti-rotation, single-leg
-  stability, lower-body strength, walking endurance.
-- **Daily adjustment rules:**
-  - *Recovery zone:* green = as planned; yellow = reduced intensity; red = mobility or rest.
-  - *Training load:* 7-day vs 28-day strain ratio; deload when it is high.
-  - *Variety:* avoid repeating the same category or muscle group on consecutive days.
-  - *Time:* fit the free blocks; if there is no time, give a 15-minute version.
-  - *Sleep:* keep hard sessions at least 3 hours before the usual bedtime.
-- **Equipment guidance:** filter by what the user has, plus a "buy one thing first" list
-  (bands → medicine ball → foam roller → dumbbells). Generic types only, no brands; any
-  affiliate links would be disclosed.
-- **Safety:** cap weekly progression, exclude exercises that conflict with reported
-  injuries, separate beginner and experienced paths, show a not-medical-advice note.
+**1. Assess the day (deterministic):**
+- **Readiness:** recovery zone, HRV and resting heart rate vs. the 30-day baseline, last night's sleep vs. need.
+- **Training load:** 7-day vs 28-day strain ratio, consecutive hard days, days since the last hard session.
+- **Sleep need tonight:** from WHOOP's sleep-need fields (already stored in the raw
+  payloads) or the personal average, plus any sleep debt.
+- **Tomorrow's constraint:** the first event tomorrow sets the latest sensible wake time.
+- **Output:** a recommended intensity for today: *rest*, *recovery* (easy movement or mobility),
+  *moderate* (Zone 2 or general strength) or *hard* (intervals or heavy strength), with
+  target duration and heart-rate zone.
 
-## Phase 2: Write sessions to the calendar
+**2. Choose block types (generic, not sport-specific):**
 
-Goal: users get reminded by their calendar, not by having to read the email.
+| Block | When it is proposed |
+|---|---|
+| **Training** at the recommended intensity | Unless today is a rest day |
+| **Recovery break** (a walk, breathing, a stretch, or a short nap window if there is sleep debt) | Red or yellow recovery, long meeting runs, or high load |
+| **Wind-down** | Every day, starting about 45-60 minutes before the target bedtime (target bedtime = target wake time minus sleep need) |
 
-- Use the narrow `calendar.app.created` scope: the app creates a dedicated **"Recovery Lab"**
-  calendar and can only touch events on it. Check Google's current documentation before
-  starting.
-- Event: title, start/end time in a free slot, a reminder (default 15 minutes before), and
-  the exercise list, demo links and "why today" in the description.
-- Shown as *busy* by default to protect the time (configurable). Excluded from our own
-  calendar sync so it never counts as schedule load.
-- New table `planned_sessions`: the plan, the Google event ID, the status (planned, moved,
-  done, skipped) and a `user_locked` flag.
-- Every 30-minute run: if a new meeting conflicts, move the session to the next free slot
-  (or shorten it, or move it to tomorrow) and notify. If recovery drops, swap in a lighter
-  session. Never move an event the user moved by hand. Update events in place, never
-  duplicate them.
-- Auto-completion: a WHOOP workout near the planned time marks the session done; otherwise
-  the next email asks.
-- Settings: on/off, earliest and latest training time, allowed days, reminder minutes,
-  busy/free.
-- Non-Google users: attach an `.ics` file to the email.
-- Update PRIVACY.md to say the app writes events to its own calendar. Users re-consent once.
+**3. Find time:** use free windows from the real calendar (time blocks only). Training
+needs a slot of its length plus a buffer, and hard sessions stay at least 3 hours before
+the target bedtime. Respect the user's preferred hours and allowed days. If nothing fits,
+offer a 15-minute version or suggest tomorrow.
 
-## Phase 3: AI layer
+**4. Explain:** each proposal carries its reasons, which code generates from the numbers
+(e.g. "recovery 41%, yellow; 3 hard days in a row").
+
+**Settings:** preferred training hours, allowed days, typical session length, wind-down
+on/off and its length, and which block types to propose.
+
+**Safety:** never push hard sessions on red days or when load is high; keep the wording
+general, with a not-medical-advice note.
+
+## Phase A2: Confirm, then write to the calendar
+
+Goal: nothing goes on the user's calendar without their confirmation; after that, the
+calendar is the reminder.
+
+- **Confirmation (MVP, no server):** each proposal in the email carries an `.ics` file /
+  "Add to calendar" link. The user's own click adds it to their calendar. No write
+  permission is needed, but the app cannot move the event later.
+- **Confirmation (target):** each proposal has a signed, single-use, expiring link (an HMAC
+  token over user, proposal and expiry). Clicking it calls a small hosted endpoint, which
+  creates the event. This is the first piece of the hosted web app (Phase D); a
+  Telegram bot with buttons is an alternative.
+- **Write scope:** `calendar.app.created`. The app creates a dedicated **"Recovery Lab"**
+  calendar and can only touch events on it, never the user's own events. Check Google's
+  current docs before building. Users re-consent once, and PRIVACY.md gets updated.
+- **Events:** title (e.g. "Moderate training: Zone 2, 40 min", "Recovery walk", "Wind-down"),
+  a reminder (default 15 minutes before) and the reasons in the description. Shown as busy
+  by default (configurable). Excluded from our own calendar sync.
+- **`planned_blocks` table:** proposal, status (proposed, confirmed, moved, done, skipped,
+  expired), Google event ID, and a `user_locked` flag.
+- **Adapting (confirmed events only):** every 30-minute run checks for new conflicts and
+  for changed readiness, then moves, shortens or downgrades the block. It notifies the user
+  and never touches an event the user moved by hand. Events are updated in place, never
+  duplicated.
+- **Auto-completion:** a WHOOP workout near the planned time marks training done; bedtime
+  vs. target shows whether the wind-down worked.
+
+## Phase B: Habit experiments, end to end
+
+Goal: a user asks a question, gets a sound 2-4 week plan, is guided through it, and gets an
+honest answer with a quality grade and a next step.
+
+**1. Ask and design**
+- Start from presets (caffeine cutoff, no alcohol, earlier dinner, fixed bedtime, no hard
+  training after a given time). Later, the AI drafts a plan from a free-text question.
+- **Pre-registration:** the primary metric (e.g. deep sleep, sleep efficiency, recovery),
+  secondary metrics, the exact intervention and control, the adherence rule, the smallest
+  effect worth caring about, and the analysis plan. All of it is fixed before day 1 and
+  shown in the final report, so there is no picking metrics after the fact.
+- **Design by type of habit:**
+  - *Short-acting* (caffeine, alcohol, dinner time, screens): randomized days or short
+    blocks of 3-4 days within 2-4 weeks. Many switches protect against trends.
+  - *Slower-acting* (bedtime regularity, training patterns): ABAB with 7-day phases.
+  - Washout nights after switches where carryover is plausible.
+  - The current engine allows 7-14 day phases; extend it to randomized-day and short-block
+    designs.
+- **Feasibility check before starting:** using the user's own day-to-day variability and
+  autocorrelation, simulate how big an effect this length could detect (e.g. "with 4 weeks
+  you could detect about ±12 min of deep sleep"). If that is unrealistic, suggest a longer
+  plan or a less noisy metric.
+
+**2. Execute and track**
+- The daily email (and an optional confirmed calendar reminder from A) shows today's condition.
+- One-tap yes/no check-in; adherence from WHOOP or the calendar where possible.
+- Automatic flags: travel or time zone change, illness signals (skin temperature,
+  respiratory rate), packed days, missing nights.
+- Mid-experiment nudges when adherence drops or too many nights are missing.
+
+**3. Analyze (deterministic engine)**
+- Bayesian regression with AR(1) errors, controlling for strain, calendar load and day of week.
+- Intention-to-treat and per-protocol results; the effect size with a credible interval;
+  the probability of a benefit and of a meaningful benefit.
+- Calibrate the engine before release (90% intervals must cover ~90% in simulation) and
+  validate it on synthetic data with planted effects.
+
+**4. Quality assessment ("report card")**
+- Adherence rate per condition; usable days per condition; missing and flagged nights.
+- **Balance check:** were strain, calendar load and weekends similar across conditions?
+- Washout and carryover handled? ITT and per-protocol consistent?
+- **Grade:** *conclusive*, *suggestive* or *insufficient*, with the specific reasons.
+
+**5. Follow-up**
+- Recommend one of: **adopt** the habit, **extend** (code calculates roughly how many more
+  days are needed), **repeat** to confirm, **refine** (change the dose or timing), or **drop**.
+- Save the result, with its grade, to the personal pattern archive. Conclusive findings can
+  change how A plans the day.
+
+**Data:** the `experiments`, `experiment_days` and `daily_checkins` tables from the WIP
+branch, plus a pre-registration snapshot, an assessment record and follow-up decisions.
+
+## Phase C: AI layer (serves A and B)
 
 - `src/llm/` with the Anthropic SDK; prompts stored as versioned files; structured (JSON
   schema) output.
@@ -103,42 +191,15 @@ Goal: users get reminded by their calendar, not by having to read the email.
   email is always sent.
 - Uses, in order:
   1. A short plain-language opening for the daily email.
-  2. Turning the selected exercises into a coherent session, with "why today".
+  2. Turning a proposed block into a friendly, specific description (what to do, why today).
   3. Explaining experiment results (ITT vs per-protocol, how sure we are).
-  4. Proposing experiment designs from a user's goal or suspicion.
+  4. Turning a user's question ("does coffee after 2pm hurt my sleep?") into a structured
+     experiment draft that code validates and the user confirms.
 - Use a small, fast model for daily text and a stronger one for design. Send only
   aggregates, never raw records or calendar data. Unit tests use a mocked client; a golden
   set of synthetic cases checks direction and overclaiming.
 
-## Phase 4: Experiments and pattern discovery
-
-- Finish the WIP engine: calibrate the intervals, keep ITT and per-protocol results, and
-  validate on synthetic data with planted effects.
-- **Pattern discovery (observational):** use the same model and controls (strain, calendar
-  load, day of week, autocorrelation) on naturally occurring variation in passive factors:
-  - bedtime and its regularity, sleep debt, naps;
-  - workout timing, type and intensity;
-  - meeting load, evening meetings, early first meetings;
-  - travel and time zone changes;
-  - weather (temperature, humidity; no reporting needed);
-  - illness signals (skin temperature, respiratory rate, SpO2).
-
-  Apply shrinkage / multiple-comparison control, and present the results as "correlation,
-  not yet verified" with an offer to test.
-- **Experiment suggestions:** from clues, from common factors (caffeine, alcohol, late meals,
-  irregular sleep, late hard training), from a one-time habits questionnaire, and from the
-  user's own suspicion. Rank by expected effect × ease × uncertainty, and accept with one tap.
-- **Embedded experiments:** let the scheduler alternate session timing (or similar) in ABAB
-  blocks, with adherence verified by WHOOP.
-- **Personal pattern archive:** completed experiments become entries that change
-  recommendations and inform the next suggestions.
-- Not planned: inferring unreported behaviors (e.g. guessing that someone drank alcohol from
-  their physiology). It is inaccurate and intrusive.
-- Not planned: experiments on sport results such as golf scores. They are too noisy and too
-  infrequent. Use benchmark tests (mobility, balance, throw distance) to track a training
-  block instead, and report change without causal claims.
-
-## Phase 5: Hosted multi-user version
+## Phase D: Hosted multi-user version
 
 - Deploy the FastAPI app (e.g. Render, Fly.io or Railway) with web OAuth for WHOOP and
   Google; a settings page (send time, time zone, training profile, calendar options).
@@ -153,6 +214,15 @@ Goal: users get reminded by their calendar, not by having to read the email.
 
 ## Later / parked
 
+- **Pattern discovery (observational screening):** scan passive factors (bedtime regularity,
+  workout timing, meeting load, travel, weather, illness signals) for associations, label
+  them as unverified, and offer them as experiment ideas for B. Same model and controls,
+  with shrinkage / multiple-comparison control. Not a priority: B's value is the lifecycle,
+  not finding correlations.
+- **Sport-specific blocks:** goal templates and a reviewed exercise library (e.g. golf:
+  rotational power, hip and thoracic mobility, anti-rotation, single-leg stability), with
+  concrete exercises, equipment guidance and benchmark tests. Parked until the generic daily
+  plan works; the AI layer would then pick exercises from the library only.
 - **Nutrition guidance:** parked. If revisited, start with training-linked fueling tips; any
   calorie targets would need safety floors, would be opt-in, would exclude minors and would
   point at-risk users to professionals. Nutrient values would come from a nutrition
@@ -163,6 +233,14 @@ Goal: users get reminded by their calendar, not by having to read the email.
 - Other wearables (Oura, Garmin, Apple Health) behind a common ingestion interface.
 - Use upcoming free time (e.g. "Thursday 14:00-16:00 is open") in proactive suggestions.
 
-## Next step
+## Order of work
 
-Phase 1, starting with the golf exercise library and the training profile.
+1. **A1:** readiness and intensity rules, block selection and slot finding (pure functions
+   with tests), then a "Today's plan" section in the daily email.
+2. **B, core:** merge and calibrate the WIP engine; presets; pre-registration;
+   randomized-day and short-block designs; feasibility check; daily condition in the
+   email; check-ins; quality report card; follow-up recommendation.
+3. **A2:** confirm-then-create (`.ics` first, then signed links and the dedicated calendar).
+4. **C:** AI layer, then **D:** hosted version.
+
+Work starts on the author's go-ahead.

@@ -1,0 +1,62 @@
+"""When to send each user's daily report. Pure logic, no I/O.
+
+The scheduled job wakes up every 30 minutes. For each user it sends at most one report
+per local day: not before `report_time`, and (if `wait_for_sleep`) only once last night's
+sleep has been scored by WHOOP, with `latest_time` as a deadline so a late or missing
+score never means no report.
+"""
+from dataclasses import dataclass
+from datetime import date, datetime, time
+
+DEFAULT_REPORT_TIME = time(10, 0)
+DEFAULT_LATEST_TIME = time(13, 0)
+
+
+@dataclass(frozen=True)
+class ReportSchedule:
+    report_time: time = DEFAULT_REPORT_TIME
+    latest_time: time = DEFAULT_LATEST_TIME
+    wait_for_sleep: bool = True
+    enabled: bool = True
+    last_report_on: date | None = None
+
+    @classmethod
+    def from_row(cls, row) -> "ReportSchedule":
+        """Build from a UserSettings row (or None); unset columns fall back to defaults."""
+        if row is None:
+            return cls()
+        return cls(
+            report_time=row.report_time or DEFAULT_REPORT_TIME,
+            latest_time=row.latest_time or DEFAULT_LATEST_TIME,
+            wait_for_sleep=True if row.wait_for_sleep is None else row.wait_for_sleep,
+            enabled=True if row.report_enabled is None else row.report_enabled,
+            last_report_on=row.last_report_on,
+        )
+
+
+def in_window(s: ReportSchedule, now_local: datetime) -> tuple[bool, str]:
+    """Whether the job should do any work for this user right now (sync + maybe send)."""
+    if not s.enabled:
+        return False, "reports disabled"
+    if s.last_report_on == now_local.date():
+        return False, "already sent today"
+    if now_local.time() < s.report_time:
+        return False, f"before report time {s.report_time:%H:%M}"
+    return True, "due"
+
+
+def ready_to_send(s: ReportSchedule, now_local: datetime, last_night_scored: bool) -> tuple[bool, str]:
+    """Called after syncing, inside the window."""
+    if not s.wait_for_sleep or last_night_scored:
+        return True, "ready"
+    if now_local.time() >= s.latest_time:
+        return True, f"sleep not scored by {s.latest_time:%H:%M}; sending anyway"
+    return False, "waiting for last night's sleep to be scored"
+
+
+def parse_hhmm(value: str) -> time:
+    try:
+        h, m = value.strip().split(":")
+        return time(int(h), int(m))
+    except (ValueError, AttributeError):
+        raise ValueError(f"Expected a time like 10:30, got {value!r}") from None

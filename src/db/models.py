@@ -1,5 +1,5 @@
 """Database schema. Every table carries user_id so the same schema serves one user or many."""
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -153,6 +154,21 @@ class OAuthToken(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
     provider: Mapped[str] = mapped_column(String(32), primary_key=True)
     ciphertext: Mapped[str] = mapped_column(Text)  # Fernet-encrypted JSON
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UserSettings(Base):
+    """Per-user preferences. Missing row = defaults (see src/report/schedule.py)."""
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
+    report_time: Mapped[time | None] = mapped_column(Time)        # earliest local send time
+    latest_time: Mapped[time | None] = mapped_column(Time)        # send by then even if sleep is unscored
+    wait_for_sleep: Mapped[bool | None] = mapped_column(Boolean)  # wait until last night is scored
+    report_enabled: Mapped[bool | None] = mapped_column(Boolean)
+    last_report_on: Mapped[date | None] = mapped_column(Date)     # local date of the last sent report
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

@@ -2,10 +2,11 @@ name: Daily sync and report
 
 on:
   schedule:
-    # 16:15 UTC = 09:15 in Los Angeles during daylight time (08:15 in winter).
+    # Every 30 minutes. The script decides per user whether a report is due, using each
+    # user's own local send time (make settings), so no time zone is hard-coded here.
     # GitHub may start scheduled runs a few minutes late.
-    - cron: "15 16 * * *"
-  workflow_dispatch: {}   # "Run workflow" button for manual runs
+    - cron: "7,37 * * * *"
+  workflow_dispatch: {}   # "Run workflow" button: sends the report immediately
 
 permissions:
   contents: read
@@ -17,14 +18,14 @@ concurrency:
 jobs:
   daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: Install dependencies
         run: uv sync --locked
       - name: Sync data and email the report
-        run: uv run python scripts/daily.py
+        run: uv run python scripts/daily.py ${{ github.event_name == 'workflow_dispatch' && '--now' || '' }}
         env:
           TOKEN_STORE: db
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

@@ -80,7 +80,20 @@ One-time setup:
    `SMTP_PASSWORD`, `REPORT_EMAIL_TO`.
 5. Actions tab -> "Daily sync and report" -> Run workflow, to test it once.
 
-`make report-preview` builds the same report locally into `data/reports/` without sending it.
+**Choosing when it arrives.** The job checks every 30 minutes and sends at most one report
+per day, in your own time zone: not before your chosen time and, by default, only after
+WHOOP has scored last night's sleep (with a deadline, so a late score never means no email).
+
+```bash
+make settings                          # show current settings (default: after 10:00, by 13:00)
+make settings ARGS="--time 10:30"      # earliest send time
+make settings ARGS="--latest 12:00"    # send by then even if sleep is not scored yet
+make settings ARGS="--no-wait"         # send at --time without waiting for the score
+make settings ARGS="--off"             # pause (use --on to resume)
+```
+
+`make daily-now` sends immediately; `make report-preview` builds the report into
+`data/reports/` without sending it. The "Run workflow" button on GitHub also sends immediately.
 The job logs never print health or calendar values, because logs of a public repo are public.
 GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it
 from the Actions tab if that happens.

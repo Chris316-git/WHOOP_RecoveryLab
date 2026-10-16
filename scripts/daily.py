@@ -20,7 +20,8 @@ from zoneinfo import ZoneInfo
 import _bootstrap  # noqa: F401
 
 from src import config
-from src.db.models import Base, User, UserSettings
+from src.db.models import User, UserSettings
+from src.db.schema import ensure_schema
 from src.db.session import SessionLocal, engine
 from src.db.upsert import upsert
 from src.gcal.google_auth import connected_users
@@ -31,7 +32,7 @@ from src.ingestion.whoop_client import WhoopClient
 from src.report.daily import build_daily_summary
 from src.report.data import load_events_for_day, load_recent_panel
 from src.report.render import render_email
-from src.report.schedule import ReportSchedule, in_window, ready_to_send
+from src.report.schedule import ReportSchedule, in_window, ready_to_send, resolve_timezone
 
 
 def _masked(user_id: str) -> str:
@@ -45,8 +46,10 @@ def _short_error(exc: Exception) -> str:
 def _user_context(user_id: str) -> tuple[str, ReportSchedule]:
     with SessionLocal() as session:
         user = session.get(User, int(user_id))
-        tz = (user.timezone if user and user.timezone else None) or config.REPORT_TIMEZONE
-        schedule = ReportSchedule.from_row(session.get(UserSettings, int(user_id)))
+        row = session.get(UserSettings, int(user_id))
+        tz = resolve_timezone(row.timezone if row else None, user.timezone if user else None,
+                              config.REPORT_TIMEZONE)
+        schedule = ReportSchedule.from_row(row)
     return tz, schedule
 
 
@@ -121,7 +124,7 @@ def main() -> None:
     args = parser.parse_args()
     mode = "preview" if args.preview else "now" if args.now else "scheduled"
 
-    Base.metadata.create_all(engine)  # creates tables added in newer versions; no-op otherwise
+    ensure_schema(engine)  # adds tables/columns from newer versions; no-op otherwise
     store = get_whoop_store()
     users = store.list_users()
     if not users:

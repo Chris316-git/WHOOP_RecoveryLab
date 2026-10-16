@@ -90,6 +90,7 @@ make settings ARGS="--time 10:30"      # earliest send time
 make settings ARGS="--latest 12:00"    # send by then even if sleep is not scored yet
 make settings ARGS="--no-wait"         # send at --time without waiting for the score
 make settings ARGS="--off"             # pause (use --on to resume)
+make settings ARGS="--tz Asia/Shanghai"  # pick a time zone; "--tz auto" follows Google Calendar
 ```
 
 `make daily-now` sends immediately; `make report-preview` builds the report into

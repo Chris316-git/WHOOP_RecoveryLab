@@ -7,6 +7,7 @@ score never means no report.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_REPORT_TIME = time(10, 0)
 DEFAULT_LATEST_TIME = time(13, 0)
@@ -60,3 +61,19 @@ def parse_hhmm(value: str) -> time:
         return time(int(h), int(m))
     except (ValueError, AttributeError):
         raise ValueError(f"Expected a time like 10:30, got {value!r}") from None
+
+
+def resolve_timezone(chosen: str | None, calendar_tz: str | None, default: str) -> str:
+    """The user's explicit choice wins; otherwise follow their Google Calendar setting."""
+    return chosen or calendar_tz or default
+
+
+def validate_timezone(name: str) -> str:
+    """Return a valid IANA time zone name such as "Asia/Shanghai" or raise ValueError."""
+    name = name.strip()
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"Unknown time zone {name!r}. Use an IANA name such as "
+                         "America/Los_Angeles, America/New_York, Europe/London or Asia/Shanghai.") from None
+    return name

@@ -168,6 +168,7 @@ class UserSettings(Base):
     latest_time: Mapped[time | None] = mapped_column(Time)        # send by then even if sleep is unscored
     wait_for_sleep: Mapped[bool | None] = mapped_column(Boolean)  # wait until last night is scored
     report_enabled: Mapped[bool | None] = mapped_column(Boolean)
+    timezone: Mapped[str | None] = mapped_column(String(64))      # IANA name; None = follow the calendar
     last_report_on: Mapped[date | None] = mapped_column(Date)     # local date of the last sent report
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -3,7 +3,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.report.schedule import ReportSchedule, in_window, parse_hhmm, ready_to_send
+from src.report.schedule import (
+    ReportSchedule,
+    in_window,
+    parse_hhmm,
+    ready_to_send,
+    resolve_timezone,
+    validate_timezone,
+)
 
 Z = ZoneInfo("America/Los_Angeles")
 
@@ -33,3 +40,12 @@ def test_parse_hhmm():
     assert parse_hhmm("9:05") == time(9, 5)
     with pytest.raises(ValueError):
         parse_hhmm("noon")
+
+
+def test_timezone_choice_overrides_calendar():
+    assert resolve_timezone("Asia/Shanghai", "America/Los_Angeles", "UTC") == "Asia/Shanghai"
+    assert resolve_timezone(None, "America/Los_Angeles", "UTC") == "America/Los_Angeles"
+    assert resolve_timezone(None, None, "UTC") == "UTC"
+    assert validate_timezone(" Europe/London ") == "Europe/London"
+    with pytest.raises(ValueError):
+        validate_timezone("Beijing")

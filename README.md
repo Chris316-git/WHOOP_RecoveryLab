@@ -37,11 +37,14 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Google Calendar sync with daily schedule features
 - [x] Daily morning email: sync, compare last night with your 30-day baseline, list today's free blocks
 - [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
-- [ ] Experiment tracking (ABAB design, daily check-ins)
-- [ ] Statistical engine (washout periods, autocorrelation, Bayesian effect estimates)
-- [ ] LLM layer for experiment design and plain-language results
-- [ ] Synthetic demo data with known planted effects
-- [ ] Web app
+- [x] Per-user send time and time zone
+- [ ] Daily training recommendations with concrete exercises (golf first)
+- [ ] Sessions written to a dedicated "Recovery Lab" calendar, moved automatically on conflicts
+- [ ] LLM layer: session write-ups and plain-language explanations (numbers stay in code)
+- [ ] Experiments and pattern discovery (ABAB, Bayesian AR(1) engine, synthetic validation)
+- [ ] Hosted multi-user web app
+
+See [ROADMAP.md](ROADMAP.md) for the plan and the design behind each step.
 
 ## Quick start
 

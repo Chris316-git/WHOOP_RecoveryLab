@@ -3,13 +3,12 @@ import sys
 
 import _bootstrap  # noqa: F401
 
-from src import config
 from src.gcal.google_auth import authorize
-from src.ingestion.token_store import FileTokenStore
+from src.ingestion.token_store import get_whoop_store
 
 
 def main() -> None:
-    users = FileTokenStore(config.WHOOP_TOKEN_DIR).list_users()
+    users = get_whoop_store().list_users()
     if not users:
         sys.exit("Connect WHOOP first (make server, then open http://localhost:8000/login).")
     user_id = users[0]

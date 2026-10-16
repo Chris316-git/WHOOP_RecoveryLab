@@ -1,8 +1,18 @@
 """Database schema. Every table carries user_id so the same schema serves one user or many."""
 from datetime import date, datetime
 
-from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String,
-                        func)
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -132,3 +142,17 @@ class DailyCalendarFeatures(Base):
     longest_free_block_min: Mapped[float] = mapped_column(Float)  # within the active window
     back_to_back_count: Mapped[int] = mapped_column(Integer)
     is_weekend: Mapped[bool] = mapped_column(Boolean)
+
+
+# ---------------- Credentials ----------------
+
+class OAuthToken(Base):
+    """Encrypted OAuth credentials, one row per user and provider ("whoop", "google")."""
+    __tablename__ = "oauth_tokens"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text)  # Fernet-encrypted JSON
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

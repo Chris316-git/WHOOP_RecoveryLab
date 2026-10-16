@@ -17,3 +17,4 @@ __pycache__/
 secrets/*
 !secrets/.gitkeep
 data/raw/
+data/reports/

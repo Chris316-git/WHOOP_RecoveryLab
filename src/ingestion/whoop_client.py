@@ -7,14 +7,13 @@ import httpx
 
 from src import config
 from src.ingestion import whoop_auth
-from src.ingestion.token_store import FileTokenStore
 
 
 class WhoopClient:
     PAGE_SIZE = 25  # maximum allowed by the API
     MAX_RETRIES = 5
 
-    def __init__(self, user_id: str, store: FileTokenStore):
+    def __init__(self, user_id: str, store):  # FileTokenStore or DbTokenStore
         self.user_id = user_id
         self.store = store
         self.token = store.load(user_id)

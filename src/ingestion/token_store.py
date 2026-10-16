@@ -1,13 +1,15 @@
 """WHOOP token storage keyed by user, so the same interface works for one user or many.
 
-FileTokenStore is for local development. A database-backed, encrypted store will
-implement the same methods for the multi-user version.
+FileTokenStore keeps tokens in .tokens/ for local development. DbTokenStore keeps them
+encrypted in Postgres so a scheduled cloud job can use them. Pick one with TOKEN_STORE.
 """
 import json
 import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from src import config
 
 
 @dataclass
@@ -53,3 +55,31 @@ class FileTokenStore:
 
     def list_users(self) -> list[str]:
         return sorted(p.stem for p in self.directory.glob("*.json"))
+
+
+class DbTokenStore:
+    """Same interface as FileTokenStore, backed by the encrypted oauth_tokens table."""
+
+    def __init__(self):
+        from src.db.credentials import DbCredentialStore
+        self._db = DbCredentialStore("whoop")
+
+    def save(self, user_id: str, token: WhoopToken) -> None:
+        self._db.save_json(user_id, json.dumps(asdict(token)))
+
+    def load(self, user_id: str) -> WhoopToken:
+        data = self._db.load_json(user_id)
+        if data is None:
+            raise FileNotFoundError(f"No WHOOP token for user {user_id} in the database.")
+        return WhoopToken(**json.loads(data))
+
+    def list_users(self) -> list[str]:
+        return self._db.list_users()
+
+
+def get_whoop_store():
+    if config.TOKEN_STORE == "db":
+        return DbTokenStore()
+    if config.TOKEN_STORE == "file":
+        return FileTokenStore(config.WHOOP_TOKEN_DIR)
+    raise RuntimeError('TOKEN_STORE must be "file" or "db"')

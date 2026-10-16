@@ -1,0 +1,38 @@
+name: Daily sync and report
+
+on:
+  schedule:
+    # 16:15 UTC = 09:15 in Los Angeles during daylight time (08:15 in winter).
+    # GitHub may start scheduled runs a few minutes late.
+    - cron: "15 16 * * *"
+  workflow_dispatch: {}   # "Run workflow" button for manual runs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-report
+  cancel-in-progress: false   # never run two syncs at once (WHOOP rotates refresh tokens)
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Sync data and email the report
+        run: uv run python scripts/daily.py
+        env:
+          TOKEN_STORE: db
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
+          WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+          GOOGLE_CALENDAR_IDS: primary
+          REPORT_TIMEZONE: America/Los_Angeles
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_EMAIL_TO: ${{ secrets.REPORT_EMAIL_TO }}

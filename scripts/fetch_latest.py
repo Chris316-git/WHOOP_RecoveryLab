@@ -3,13 +3,12 @@ import sys
 
 import _bootstrap  # noqa: F401
 
-from src import config
-from src.ingestion.token_store import FileTokenStore
+from src.ingestion.token_store import get_whoop_store
 from src.ingestion.whoop_client import WhoopClient
 
 
 def main() -> None:
-    store = FileTokenStore(config.WHOOP_TOKEN_DIR)
+    store = get_whoop_store()
     users = store.list_users()
     if not users:
         sys.exit("No connected WHOOP account. Run `make server` and open http://localhost:8000/login.")

@@ -37,7 +37,19 @@ GOOGLE_CLIENT_SECRET_FILE = PROJECT_ROOT / os.getenv(
 GOOGLE_CALENDAR_IDS = [c.strip() for c in os.getenv("GOOGLE_CALENDAR_IDS", "primary").split(",") if c.strip()]
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-# Local credential storage for development (replaced by an encrypted DB table for multi-user).
+# Where OAuth credentials live: "file" (.tokens/, local development) or "db" (encrypted in
+# the oauth_tokens table; required for the scheduled cloud job). Use ONE store everywhere:
+# WHOOP rotates refresh tokens, so two stores would keep invalidating each other.
+TOKEN_STORE = os.getenv("TOKEN_STORE", "file").strip().lower()
 TOKEN_DIR = PROJECT_ROOT / ".tokens"
 WHOOP_TOKEN_DIR = TOKEN_DIR / "whoop"
 GOOGLE_TOKEN_DIR = TOKEN_DIR / "google"
+
+# Daily report
+REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "America/Los_Angeles")  # fallback if the calendar has none
+REPORT_EMAIL_TO = os.getenv("REPORT_EMAIL_TO", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+REPORT_DIR = PROJECT_ROOT / "data" / "reports"  # local previews (git-ignored)

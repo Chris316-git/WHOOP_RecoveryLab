@@ -8,10 +8,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from src import config
 from src.ingestion import whoop_auth
-from src.ingestion.token_store import FileTokenStore
+from src.ingestion.token_store import get_whoop_store
 
 app = FastAPI(title="Recovery Lab")
-store = FileTokenStore(config.WHOOP_TOKEN_DIR)
+store = get_whoop_store()
 _pending_states: set[str] = set()  # fine for a single local process
 
 

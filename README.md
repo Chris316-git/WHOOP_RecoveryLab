@@ -106,7 +106,8 @@ tests/         Unit tests for pure logic
 
 All data stays in the database you configure. Credentials live in `.env` and `.tokens/`
 (both git-ignored) or, for the scheduled job, encrypted in the database with a key that is
-kept only in `.env` and GitHub Secrets. The daily email goes only to the address you set. This project is not affiliated with WHOOP and is not medical advice.
+kept only in `.env` and GitHub Secrets. The daily email goes only to the address you set.
+See [PRIVACY.md](PRIVACY.md) for exactly what is stored and how to delete it. This project is not affiliated with WHOOP and is not medical advice.
 
 ## License
 

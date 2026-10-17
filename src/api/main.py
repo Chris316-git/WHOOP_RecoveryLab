@@ -102,6 +102,19 @@ def _no_store(response: HTMLResponse) -> HTMLResponse:
     return response
 
 
+@app.exception_handler(Exception)
+async def _unexpected(request: Request, exc: Exception):
+    """A readable page instead of a bare "Internal Server Error". The full traceback goes to
+    the host's logs (it may contain data, so it is never shown on the page)."""
+    import logging
+
+    from src.actions import pages
+    logging.getLogger("recovery_lab").exception("unhandled error on %s", request.url.path)
+    return HTMLResponse(pages.done("Something went wrong",
+                                   f"Nothing was changed. ({type(exc).__name__}; details are in the server log.)"),
+                        status_code=500)
+
+
 @app.get("/a/{token}")
 def action_page(token: str, request: Request):
     from src.actions import pages
@@ -158,5 +171,25 @@ def action_submit(token: str, request: Request, choice: int | None = None):
 
 
 @app.get("/healthz")
-def healthz():
-    return {"ok": True}
+def healthz(deep: bool = False):
+    """Liveness. With ?deep=1, also check the settings and the database connection. Only
+    yes/no answers and an error type are returned, never values."""
+    if not deep:
+        return {"ok": True}
+    from sqlalchemy import text
+
+    from src.settings import Settings
+    s = Settings.from_env()
+    out = {"ok": True, "database_url_set": bool(s.database_url), "signing_key_set": bool(s.action_signing_key),
+           "encryption_key_set": bool(s.token_encryption_key)}
+    try:
+        from src.db.session import default_session_factory
+        with default_session_factory()() as session:
+            session.execute(text("select 1"))
+            cols = {r[0] for r in session.execute(text(
+                "select column_name from information_schema.columns where table_name = 'daily_plans'"))}
+        out["database"] = "ok"
+        out["schema_up_to_date"] = {"response", "calendar_status", "outcome"} <= cols
+    except Exception as exc:
+        out.update(ok=False, database=type(exc).__name__)
+    return out

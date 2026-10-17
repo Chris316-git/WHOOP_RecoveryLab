@@ -42,7 +42,8 @@ class Settings:
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
         env = os.environ if env is None else env
-        get = lambda k, d="": (env.get(k) or d).strip()  # noqa: E731
+        # Values pasted into a hosting dashboard often keep the quotes from .env; drop them.
+        get = lambda k, d="": (env.get(k) or d).strip().strip("'\"").strip()  # noqa: E731
         return cls(
             database_url=get("DATABASE_URL"),
             token_store=get("TOKEN_STORE", "file").lower(),

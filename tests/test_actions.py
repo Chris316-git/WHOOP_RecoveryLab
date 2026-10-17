@@ -73,3 +73,9 @@ def test_one_tap_page_submits_itself_but_works_without_scripts():
     assert 'method="post"' in html and ".submit()" in html and "Add to calendar</button>" in html
     result = done("Added", "On your calendar.", undo_url="/a/undo", not_useful_url="/a/nu")
     assert "Undo" in result and "wasn&#x27;t useful" in result
+
+
+def test_settings_drop_quotes_pasted_from_env_files():
+    from src.settings import Settings
+    s = Settings.from_env({"DATABASE_URL": ' "postgresql://u:p@h/db" ', "ACTION_SIGNING_KEY": "'abc'"})
+    assert s.database_url == "postgresql://u:p@h/db" and s.action_signing_key == "abc"

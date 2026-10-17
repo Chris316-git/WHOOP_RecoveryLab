@@ -108,12 +108,12 @@ from the Actions tab if that happens.
 ## Add to calendar (optional)
 
 The email is meant to be read in 15 seconds and then closed; ignoring it is a fine response.
-Only when today's focus actually needs a time block (a wind-down before bed, a break in a busy
-day, a hard session) does it carry two buttons: **Add to calendar** puts the block on a
+Only when today's focus comes with a time block (an easy walk, a wind-down before bed, a break
+in a busy day, a hard session) does it carry two buttons: **Add to calendar** puts the block on a
 calendar the app creates for you ("Recovery Lab", with a 15-minute reminder) in one tap, and
 **Change time** offers other free slots today. A quiet **Dismiss** link sits next to them, with
-no questions asked. Every result page has **Undo**. Advice that is not about time, such as
-"take it easy today", has no buttons, only a small "Not useful?" link.
+no questions asked. Every result page has **Undo**. When there is no block (no free time fits,
+or nothing needs to change), there are no buttons.
 
 Three things are stored separately in `daily_plans`, because they mean different things:
 whether you responded (no response is *not* a rejection), whether something is on the

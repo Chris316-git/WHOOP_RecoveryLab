@@ -102,8 +102,8 @@ scheduling it is optional.
 **Status:** steps 1-3 are done: focus selection with confidence, counter-evidence and "why
 not"; slot finding; the email card; optional one-tap calendar actions with Undo
 (`src/actions/`). Simplified after the first version: no "Accept" (accept what, the analysis
-or a promise?), no confirmation step, no reasons asked on skip, and no buttons at all for
-advice that is not about time. Still open from step 3: moving a scheduled block
+or a promise?), no confirmation step, no reasons asked on skip, and no buttons on days with
+nothing to change. Still open from step 3: moving a scheduled block
 automatically when a new meeting conflicts. Next: step 4 (LLM wording).
 
 **1. Choose today's focus (deterministic).** Code builds candidate focuses and scores each one
@@ -137,9 +137,9 @@ wind-down block that starts 45-60 minutes before the target bedtime (target wake
 sleep need).
 
 **3. Optional calendar actions.**
-- Only focuses that need a time block (wind-down, a break in a busy day, a hard session)
-  get **Add to calendar** and **Change time**, plus a quiet **Dismiss**. "Take it easy" gets
-  no buttons, only a small "Not useful?".
+- Focuses that come with a time block (an easy walk, a wind-down, a break in a busy day, a
+  hard session) get **Add to calendar** and **Change time**, plus a quiet **Dismiss**. Days
+  with nothing to change get no buttons.
 - Links are **signed and expiring** (an HMAC token over user, day, action and expiry). Mail
   scanners open links on their own, so a GET never acts by itself: the page submits the
   action with a line of JavaScript (most scanners do not run it) and falls back to a button.

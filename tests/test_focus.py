@@ -39,7 +39,7 @@ def test_high_load_and_low_hrv_lowers_intensity_with_an_easy_slot():
     assert f["focus"] == "lower_intensity"
     assert any("1.55x" in r for r in f["reasons"]) and any("HRV" in r for r in f["reasons"])
     assert f["block"]["minutes"] == 30 and f["block"]["start"] == "16:00"
-    assert f["schedulable"] is False   # "take it easy" is advice, not a calendar event
+    assert f["schedulable"] is True    # the easy walk can go on the calendar, optionally
 
 
 def test_sleep_debt_turns_into_a_wind_down_before_target_bedtime():

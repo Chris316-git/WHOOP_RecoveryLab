@@ -31,9 +31,9 @@ EARLIEST_TARGET_BEDTIME = 21 * 60 + 30
 WIND_DOWN_MIN = 45
 BEDTIME_HISTORY_DAYS = 14
 
-# Focuses where a time block on the calendar actually helps. "Take it easy" is advice about
-# how hard to go, not something to schedule, so it gets no calendar button.
-SCHEDULABLE = {"prioritize_sleep", "recover_between", "go_hard"}
+# Focuses whose suggested block can go on the calendar (always optional, one tap). A focus
+# with no block ("nothing needs to change") never gets calendar buttons.
+SCHEDULABLE = {"lower_intensity", "prioritize_sleep", "recover_between", "go_hard"}
 
 TITLES = {
     "lower_intensity": "Take it easy today",

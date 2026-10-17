@@ -3,8 +3,14 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from src.analysis.panel import sleep_need_minutes
-from src.report.signals import compute_signals, sleep_shortfall, training_load, vital_trend, weekday_pattern
+from src.report.signals import (
+    compute_signals,
+    sleep_shortfall,
+    training_load,
+    vital_trend,
+    weekday_pattern,
+)
+from src.sources.whoop import sleep_need_minutes
 
 TODAY = date(2026, 10, 16)  # a Friday
 
@@ -16,7 +22,7 @@ def make_panel(days=60, **cols):
         "hrv_rmssd_milli": 60 + rng.normal(0, 3, days),
         "resting_heart_rate": 55 + rng.normal(0, 1, days),
         "total_sleep_min": 450 + rng.normal(0, 15, days),
-        "strain": 10 + rng.normal(0, 1, days),
+        "load": 10 + rng.normal(0, 1, days),
     }
     data.update(cols)
     return pd.DataFrame(data, index=pd.Index(idx, name="day"))
@@ -47,10 +53,10 @@ def test_sleep_shortfall_uses_whoop_need_or_default():
 
 def test_training_load_ratio_and_hard_streak():
     p = make_panel(strain=[10.0] * 60)
-    p.loc[p.index >= TODAY - timedelta(days=3), "strain"] = 16.0
+    p.loc[p.index >= TODAY - timedelta(days=3), "load"] = 16.0
     load = training_load(p, TODAY)
     assert load["consecutive_hard_days"] == 3
-    assert load["ratio"] > 1.0 and load["yesterday_strain"] == 16.0
+    assert load["ratio"] > 1.0 and load["yesterday_load"] == 16.0
 
 
 def test_weekday_pattern_only_when_reliable():

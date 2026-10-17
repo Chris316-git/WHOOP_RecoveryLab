@@ -2,6 +2,7 @@
 from datetime import date, datetime, time
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     Date,
@@ -14,8 +15,11 @@ from sqlalchemy import (
     Time,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# JSONB on Postgres; plain JSON on SQLite so the schema also runs in in-memory tests.
+JSONB = PG_JSONB().with_variant(JSON(), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -170,6 +174,26 @@ class UserSettings(Base):
     report_enabled: Mapped[bool | None] = mapped_column(Boolean)
     timezone: Mapped[str | None] = mapped_column(String(64))      # IANA name; None = follow the calendar
     last_report_on: Mapped[date | None] = mapped_column(Date)     # local date of the last sent report
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ---------------- Planner ----------------
+
+class DailyPlan(Base):
+    """The focus chosen for a day (Phase 2). Kept so the feedback loop can learn from it."""
+    __tablename__ = "daily_plans"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)      # local date of the plan
+    focus: Mapped[str] = mapped_column(String(32))                 # e.g. lower_intensity, none
+    score: Mapped[float] = mapped_column(Float)
+    reasons: Mapped[list] = mapped_column(JSONB, default=list)
+    block: Mapped[dict | None] = mapped_column(JSONB)           # proposed time block, if any
+    considered: Mapped[list] = mapped_column(JSONB, default=list)  # every candidate and its score
+    status: Mapped[str] = mapped_column(String(16), default="proposed")  # proposed|accepted|adjusted|declined
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

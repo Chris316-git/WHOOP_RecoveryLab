@@ -1,8 +1,8 @@
 """Build the daily summary from the daily panel and today's calendar. Pure logic, no I/O.
 
-Every number in the report is computed here. Suggestions are simple, transparent rules
-(WHOOP recovery zones, deviations from your own 30-day baseline); they are NOT causal
-findings. Causal claims come only from completed experiments.
+Every number in the report is computed here. The day's focus (src/planner/focus.py) is
+chosen by transparent rules from these numbers; it is NOT a causal finding. Causal claims
+come only from completed experiments.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from src.planner.focus import choose_focus
 from src.report.signals import compute_signals
 
 BASELINE_DAYS = 30
@@ -135,41 +136,9 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
     )
 
 
-def _window_text(w: dict | None) -> str:
-    return f"{w['start']}-{w['end']}" if w else ""
-
-
-def suggestions(summary: dict) -> list[str]:
-    tips = []
-    zone = summary["recovery_zone"]
-    longest = summary["calendar"]["longest_free"] if summary.get("calendar") else None
-    if zone == "red":
-        tip = "Recovery is in the red zone: consider keeping training light today."
-        if longest:
-            tip += f" An easy walk fits in your free block {_window_text(longest)}."
-        tips.append(tip)
-    elif zone == "green":
-        tip = "Recovery is in the green zone: a good day for a harder session."
-        if longest and longest["minutes"] >= 60:
-            tip += f" Your longest free block is {_window_text(longest)}."
-        tips.append(tip)
-    elif zone == "yellow":
-        tips.append("Recovery is in the yellow zone: normal training is fine; skip all-out efforts.")
-
-    by_key = {m["key"]: m for m in summary["metrics"]}
-    sleep = by_key.get("total_sleep_min", {})
-    if sleep.get("delta") is not None and sleep["delta"] <= -45:
-        tips.append(f"Last night was {abs(sleep['delta']):.0f} min shorter than your usual. "
-                    "Aim for an earlier wind-down tonight.")
-    cal = summary.get("calendar")
-    if cal and cal["busy_hours"] >= 7:
-        tips.append(f"Heavy calendar today ({cal['busy_hours']:g} busy hours). "
-                    "Block a short break if you can.")
-    return tips
-
-
 def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
-                        events_today: list[dict] | None = None, now: datetime | None = None) -> dict:
+                        events_today: list[dict] | None = None, now: datetime | None = None,
+                        recent_focuses: list[str] | None = None) -> dict:
     """Summary for the morning of `today`: last night's sleep and recovery vs. your own
     30-day baseline, the last 7 days vs. that baseline, and today's calendar."""
     last_night = today - timedelta(days=1)  # behavior day whose sleep ended this morning
@@ -191,7 +160,7 @@ def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
             trend[key] = dict(week_mean=round(float(week[key].mean()), 1),
                               baseline_median=round(float(hist[key].median()), 1))
 
-    strain = None if row is None else row.get("strain")
+    load = None if row is None else row.get("load")
     summary = dict(
         date=today.isoformat(),
         weekday=today.strftime("%A"),
@@ -199,10 +168,10 @@ def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
         last_night_scored=row is not None and pd.notna(row.get("recovery_score")),
         recovery_zone=recovery_zone(recovery),
         metrics=metrics,
-        yesterday_strain=None if strain is None or pd.isna(strain) else round(float(strain), 1),
+        yesterday_load=None if load is None or pd.isna(load) else round(float(load), 1),
         week_trend=trend,
         calendar=calendar_summary(events_today, today, tz, now) if events_today is not None else None,
         signals=compute_signals(panel, today),
     )
-    summary["suggestions"] = suggestions(summary)
+    summary["focus"] = choose_focus(summary, panel, today, now, recent_focuses)
     return summary

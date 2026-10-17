@@ -39,7 +39,7 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
 - [x] Per-user send time and time zone
 - [x] Personal trends: HRV and resting heart rate vs. your normal range, sleep shortfall, training load, weekday patterns
-- [ ] Daily planner: one focus a day (or "nothing to change"), placed in real free time
+- [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time
 - [ ] Accept / adjust / decline links; confirmed blocks go to a dedicated "Recovery Lab" calendar
 - [ ] Feedback loop: did the advice happen, and did it help?
 - [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
@@ -110,15 +110,41 @@ from the Actions tab if that happens.
 src/
   ingestion/   WHOOP OAuth, API client, payload mapping, sync, token stores
   gcal/        Google Calendar auth, sync, daily schedule features
-  db/          SQLAlchemy models and session
-  analysis/    Daily panel (day alignment of sleep, recovery, strain, calendar); experiment stats next
-  report/      Daily summary (pure logic) and email rendering
+  sources/     Wearable adapters: vendor rows -> device-agnostic DailyRecords (whoop.py)
+  analysis/    DailyRecord contract and the daily panel (day alignment of sleep, readiness, load, calendar)
+  report/      Trend signals, daily summary and email rendering (pure logic)
+  planner/     Today's focus: scoring, threshold, time slot (pure logic)
+  pipeline/    The daily pipeline as injectable stages: sync -> build -> deliver -> record
+  db/          SQLAlchemy models, session factories, upsert, encrypted credentials
   notify/      Email delivery
-  llm/         Experiment design and explanations (in progress)
+  settings.py  Runtime settings as one immutable object (from .env / environment)
   api/         FastAPI app (login flow)
-scripts/       Command-line entry points (daily.py is the scheduled job)
+scripts/       Thin command-line entry points (daily.py runs the pipeline)
 .github/       GitHub Actions workflow for the daily job
-tests/         Unit tests for pure logic
+tests/         Unit tests for the pure logic, plus an end-to-end pipeline test on in-memory SQLite
+```
+
+### Design for reuse
+
+- **Device-agnostic core.** Adapters in `src/sources/` turn vendor data into `DailyRecord`s
+  (`src/analysis/records.py`). The panel, signals, planner and report only see records, so
+  adding Oura or Garmin means writing one adapter.
+- **Pure functions in the middle.** `build_panel`, `compute_signals`, `choose_focus` and
+  `render_email` take data and return data. They do no I/O, so they are unit-tested and can be
+  called from a notebook or another service.
+- **Dependencies are injected.** `DailyPipeline` receives its session factory, `Settings`, token
+  store, mail sender and clock. The end-to-end test runs it against in-memory SQLite with a
+  fake sender and a fixed clock:
+
+```python
+from src.db.session import make_session_factory
+from src.pipeline.daily import DailyPipeline
+from src.settings import Settings
+
+settings = Settings.from_env()
+pipeline = DailyPipeline(session_factory=make_session_factory(settings.database_url),
+                         settings=settings, whoop_store=my_store, sender=my_sender)
+runs = pipeline.run_all(mode="preview")   # or run_user(user_id, mode="now")
 ```
 
 ## Privacy

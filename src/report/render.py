@@ -79,20 +79,32 @@ def subject(summary: dict) -> str:
     head = f"Recovery Lab · {summary['weekday']} {summary['date']}"
     if rec is None:
         return f"{head} · last night not scored yet"
-    return f"{head} · Recovery {rec:g}% ({summary['recovery_zone']})"
+    focus = summary.get("focus") or {}
+    tail = f" · {focus['title']}" if focus.get("focus") not in (None, "none") else ""
+    return f"{head} · Recovery {rec:g}% ({summary['recovery_zone']}){tail}"
 
 
 def render_text(summary: dict, notices: list[str]) -> str:
     lines = [subject(summary), ""]
     lines += [f"! {n}" for n in notices]
+    f = summary.get("focus")
+    if f:
+        lines += [f"TODAY'S FOCUS: {f['title']}"]
+        lines += [f"  - because {r}" for r in f["reasons"]]
+        if f.get("block"):
+            b = f["block"]
+            lines.append(f"  Suggested: {b['start']}-{b['end']}  {b['title']}")
+        if f.get("note"):
+            lines.append(f"  {f['note']}")
+        lines.append("")
     if not summary["last_night_scored"]:
         lines.append("Last night's sleep is not scored yet (or WHOOP was not worn).")
     lines.append("Last night")
     for m in summary["metrics"]:
         lines.append(f"  {m['label']:20s} {_fmt(m['value'], m['unit']):>10s}   {_delta(m)}  "
                      f"({STATUS_TEXT[m['status']]})")
-    if summary["yesterday_strain"] is not None:
-        lines.append(f"  {'Yesterday strain':20s} {summary['yesterday_strain']:>10g}")
+    if summary["yesterday_load"] is not None:
+        lines.append(f"  {'Yesterday strain':20s} {summary['yesterday_load']:>10g}")
     trends = trend_lines(summary)
     if trends:
         lines += ["", "Trends"] + [f"  {t}" for t, _ in trends]
@@ -103,9 +115,6 @@ def render_text(summary: dict, notices: list[str]) -> str:
                   + (f", {cal['first_start']}-{cal['last_end']}" if cal["first_start"] else "")]
         if cal["free_windows"]:
             lines.append("  Free: " + ", ".join(f"{w['start']}-{w['end']}" for w in cal["free_windows"]))
-    if summary["suggestions"]:
-        lines += ["", "Suggestions (rule-based, not experiment results)"]
-        lines += [f"  - {s}" for s in summary["suggestions"]]
     return "\n".join(lines)
 
 
@@ -151,7 +160,7 @@ def _hero(summary: dict) -> str:
                      'WHOOP may still be processing, or it was not worn.</div>')
     fill, pill_bg, label = ZONE_STYLE.get(summary["recovery_zone"], (MUTED, LINE, "-"))
     pct = max(2, min(100, int(round(rec["value"]))))
-    strain = summary.get("yesterday_strain")
+    strain = summary.get("yesterday_load")
     side = []
     if rec["delta"] is not None:
         side.append(f'{_arrow(rec)}{escape(_delta(rec))}')
@@ -243,16 +252,41 @@ def _today(summary: dict) -> str:
     return _card(f'{_title("Today")}{head}{bar}{free}')
 
 
-def _suggestions(summary: dict) -> str:
-    if not summary["suggestions"]:
+FOCUS_ACCENT = {"lower_intensity": "#f59e0b", "prioritize_sleep": "#6366f1", "recover_between": "#14b8a6",
+                "go_hard": GOOD, "none": "#9ca3af"}
+
+
+def _focus(summary: dict) -> str:
+    f = summary.get("focus")
+    if not f:
         return ""
-    items = "".join(f'<tr><td style="padding:4px 0;color:{INK};font-size:14px;line-height:1.5">{escape(s)}</td></tr>'
-                    for s in summary["suggestions"])
-    return _card(f'{_title("Suggestions")}<table role="presentation" width="100%" cellpadding="0" '
-                 f'cellspacing="0" style="border-left:3px solid {INK};padding-left:12px"><tr><td>'
-                 f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{items}</table>'
-                 f'</td></tr></table><div style="font-size:12px;color:{MUTED};margin-top:10px">Rule-based hints from '
-                 f'WHOOP zones and your own baseline, not experiment results.</div>')
+    accent = FOCUS_ACCENT.get(f["focus"], "#9ca3af")
+    reasons = "".join(
+        f'<tr><td style="width:14px;vertical-align:top;color:{MUTED};padding:3px 0">&middot;</td>'
+        f'<td style="color:{INK_2};font-size:14px;line-height:1.45;padding:3px 0">'
+        f'{escape(r[:1].upper() + r[1:])}</td></tr>'
+        for r in f["reasons"])
+    reasons_html = (f'<div style="font-size:12px;color:{MUTED};margin:12px 0 2px">Why</div>'
+                    f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{reasons}</table>'
+                    if reasons else "")
+    block_html = ""
+    if f.get("block"):
+        b = f["block"]
+        block_html = (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:14px">'
+                      f'<tr><td style="background:#f9fafb;border:1px solid {LINE};border-radius:10px;'
+                      f'padding:10px 14px">'
+                      f'<span style="font-size:15px;font-weight:600;color:{INK}">{b["start"]}-{b["end"]}</span>'
+                      f'<span style="color:{MUTED}"> &nbsp;&middot;&nbsp; </span>'
+                      f'<span style="font-size:14px;color:{INK_2}">{escape(b["title"])}</span></td></tr></table>')
+    note_html = (f'<div style="font-size:13px;color:{INK_2};margin-top:12px">{escape(f["note"])}</div>'
+                 if f.get("note") else "")
+    focus_title = _title("Today's focus")
+    body = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td style="width:4px;background:{accent};border-radius:4px"></td><td style="padding-left:16px">'
+            f'{focus_title}'
+            f'<div style="font-size:22px;font-weight:600;color:{INK};line-height:1.25">{escape(f["title"])}</div>'
+            f'{reasons_html}{block_html}{note_html}</td></tr></table>')
+    return _card(body)
 
 
 def render_html(summary: dict, notices: list[str]) -> str:
@@ -265,10 +299,11 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'RECOVERY LAB</td><td style="text-align:right;font-size:13px;color:{MUTED}">'
               f'{escape(summary["weekday"])}, {escape(summary["date"])}</td></tr></table></td></tr>')
     footer = (f'<tr><td style="padding:8px 4px 0;font-size:12px;color:{MUTED};line-height:1.5">'
-              f'Compared with your own recent history. Not medical advice. '
+              f'Compared with your own recent history. The focus is chosen by transparent rules, not '
+              f'experiment results. Not medical advice. '
               f'Change the delivery time with <code>make settings</code>.</td></tr>')
-    content = (header + notice_html + _hero(summary) + _metrics(summary) + _trends(summary)
-               + _today(summary) + _suggestions(summary) + footer)
+    content = (header + notice_html + _hero(summary) + _focus(summary) + _metrics(summary)
+               + _trends(summary) + _today(summary) + footer)
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>'

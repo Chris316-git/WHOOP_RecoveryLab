@@ -83,6 +83,9 @@ Goal: each morning, an accurate picture of where you stand relative to *your own
 Goal: one recommendation a day that fits your body and your calendar, which you can accept,
 adjust or decline.
 
+**Status:** steps 1, 2 and the "Today's focus" email card are done (`src/planner/focus.py`,
+plans saved to `daily_plans`). Next: step 3 (accept / adjust / decline), then step 4.
+
 **1. Choose today's focus (deterministic).** Code builds candidate focuses and scores each one
 by *how far today deviates from your baseline × whether you can act on it today*:
 
@@ -94,6 +97,11 @@ by *how far today deviates from your baseline × whether you can act on it today
 | Recover between commitments | A long run of meetings with low readiness |
 | Nothing needs to change | No candidate clears the threshold |
 
+- **No nagging:** sleep shortfall is judged against *your* usual week (a chronically short
+  sleeper is not told "sleep more" every day), an assumed 8 h need counts for less, and a
+  focus already chosen on each of the last two days needs stronger evidence to be repeated.
+  On synthetic data this gives a focus on about a quarter of days and "nothing needs to
+  change" on the rest.
 - Only the top candidate is sent, and only if it clears a threshold. Otherwise the email says
   "all normal, keep your plan". The planner proposes at most one calendar block a day.
 - **Intensity uses several signals,** not the recovery score alone: HRV and resting heart rate
@@ -233,8 +241,8 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 ## Order of work
 
 1. ~~**Phase 1 additions:** trends, load, weekday patterns.~~ Done.
-2. **Phase 2:** focus selection and threshold, then slot finding, the "Today's focus" email,
-   signed action links with a minimal endpoint, the dedicated calendar, and finally the LLM wording.
+2. **Phase 2:** ~~focus selection and threshold, slot finding, the "Today's focus" email~~ (done);
+   next: signed action links with a minimal endpoint, the dedicated calendar, and finally the LLM wording.
 3. **Phase 3:** decision log, completion checks, "was it helpful?".
 4. **Phase 4:** calibrate and merge the engine; presets; pre-registration; data-driven
    length; report card; follow-up.

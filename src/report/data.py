@@ -7,7 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.analysis.panel import build_panel
-from src.db.models import CalendarEvent, Cycle, DailyCalendarFeatures, Recovery, Sleep
+from src.db.models import (
+    CalendarEvent,
+    Cycle,
+    DailyCalendarFeatures,
+    DailyPlan,
+    Recovery,
+    Sleep,
+)
+from src.sources import whoop
 
 HISTORY_DAYS = 70  # enough for 30-day baselines before the last week and 8 weeks of weekday patterns
 
@@ -28,7 +36,7 @@ def load_recent_panel(session: Session, user_id: int, today: date) -> pd.DataFra
     calendar = [_as_dict(c) for c in session.scalars(
         select(DailyCalendarFeatures).where(DailyCalendarFeatures.user_id == user_id,
                                             DailyCalendarFeatures.day >= lo.date()))]
-    return build_panel(sleeps, recoveries, cycles, calendar)
+    return build_panel(whoop.daily_records(sleeps, recoveries, cycles), calendar)
 
 
 def load_events_for_day(session: Session, user_id: int, day: date, tz: str) -> list[dict]:
@@ -40,3 +48,16 @@ def load_events_for_day(session: Session, user_id: int, day: date, tz: str) -> l
         CalendarEvent.user_id == user_id, CalendarEvent.start < end, CalendarEvent.end > start,
         CalendarEvent.all_day.is_(False), CalendarEvent.is_busy.is_(True)))
     return [dict(start=r.start, end=r.end, attendee_count=r.attendee_count) for r in rows]
+
+
+def load_recent_focuses(session: Session, user_id: int, today: date, days: int = 3) -> list[str]:
+    """Focuses chosen on the previous `days` days, most recent first (missing days end the run)."""
+    rows = {r.day: r.focus for r in session.scalars(select(DailyPlan).where(
+        DailyPlan.user_id == user_id, DailyPlan.day >= today - timedelta(days=days), DailyPlan.day < today))}
+    out = []
+    for k in range(1, days + 1):
+        d = today - timedelta(days=k)
+        if d not in rows:
+            break
+        out.append(rows[d])
+    return out

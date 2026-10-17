@@ -7,13 +7,13 @@ All comparisons are against the user's OWN history:
   practice, because its day-to-day spread grows with its level.
 * Sleep shortfall: the last 7 nights vs. WHOOP's baseline sleep need (falls back to 8 h,
   and says so, when the need is unavailable).
-* Training load: the mean strain of the last 7 days vs. the last 28 days (an
+* Training load: the mean daily load (WHOOP strain scale) of the last 7 days vs. the last 28 days (an
   acute:chronic ratio), plus the number of consecutive hard days. This is a heuristic for
   "more or less than you are used to", not an injury predictor.
 * Weekday pattern: whether tonight's weekday is reliably a short-sleep night for you.
 
 Day convention (see src/analysis/panel.py): row `d` holds the sleep that starts on the
-night of `d` and the strain of day `d`. On the morning of `today`, the latest complete row
+night of `d` and the load of day `d`. On the morning of `today`, the latest complete row
 is `today - 1`.
 """
 import math
@@ -87,8 +87,20 @@ def sleep_shortfall(panel: pd.DataFrame, today: date) -> dict | None:
     need_series = _window(panel, "sleep_need_baseline_min", today - timedelta(days=BASELINE_DAYS), today)
     need = float(need_series.median()) if len(need_series) else float(FALLBACK_SLEEP_NEED_MIN)
     short = (need - sleep).clip(lower=0)
+
+    # Your typical 7-night shortfall over the previous 30 days, so a chronically short
+    # sleeper is not told "sleep more" every single day: what stands out is a week that is
+    # worse than YOUR usual (plus a large absolute shortfall, reported separately).
+    history = (need - _window(panel, "total_sleep_min", start - timedelta(days=BASELINE_DAYS), start)).clip(lower=0)
+    weekly = []
+    for end in history.index:
+        win = history[(history.index > end - timedelta(days=RECENT_DAYS)) & (history.index <= end)]
+        if len(win) >= MIN_RECENT:
+            weekly.append(float(win.mean()) * RECENT_DAYS)
+    typical = round(float(pd.Series(weekly).median())) if len(weekly) >= 7 else None
     return dict(
         shortfall_min=round(float(short.sum())),
+        typical_shortfall_min=typical,
         nights_measured=int(len(sleep)),
         nights_short=int((short >= 30).sum()),
         avg_sleep_min=round(float(sleep.mean())),
@@ -99,14 +111,14 @@ def sleep_shortfall(panel: pd.DataFrame, today: date) -> dict | None:
 
 def training_load(panel: pd.DataFrame, today: date) -> dict | None:
     """Acute (7-day) vs chronic (28-day) mean strain, and consecutive hard days up to yesterday."""
-    chronic = _window(panel, "strain", today - timedelta(days=LOAD_CHRONIC_DAYS), today)
-    acute = _window(panel, "strain", today - timedelta(days=LOAD_ACUTE_DAYS), today)
+    chronic = _window(panel, "load", today - timedelta(days=LOAD_CHRONIC_DAYS), today)
+    acute = _window(panel, "load", today - timedelta(days=LOAD_ACUTE_DAYS), today)
     if len(chronic) < MIN_LOAD_DAYS or len(acute) < MIN_RECENT or chronic.mean() <= 0:
         return None
     ratio = float(acute.mean() / chronic.mean())
     level = ("low" if ratio < 0.8 else "normal" if ratio <= 1.3 else "high" if ratio <= 1.5 else "very_high")
     streak, d = 0, today - timedelta(days=1)
-    strain = panel["strain"] if "strain" in panel else pd.Series(dtype=float)
+    strain = panel["load"] if "load" in panel else pd.Series(dtype=float)
     while d in strain.index and pd.notna(strain.loc[d]) and float(strain.loc[d]) >= HARD_STRAIN:
         streak += 1
         d -= timedelta(days=1)
@@ -117,7 +129,7 @@ def training_load(panel: pd.DataFrame, today: date) -> dict | None:
         ratio=round(ratio, 2),
         level=level,
         consecutive_hard_days=streak,
-        yesterday_strain=None if yesterday is None or pd.isna(yesterday) else round(float(yesterday), 1),
+        yesterday_load=None if yesterday is None or pd.isna(yesterday) else round(float(yesterday), 1),
     )
 
 

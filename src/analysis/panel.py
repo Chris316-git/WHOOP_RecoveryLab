@@ -1,16 +1,16 @@
-"""Assemble one row per behavior day from WHOOP and calendar rows. Pure logic, no I/O.
+"""Assemble one row per behavior day from device-agnostic records and calendar features.
+Pure logic, no I/O.
 
-Day alignment: day `d` is the day the behavior happens (e.g. coffee at 4pm on d).
-Its outcomes are the main sleep that starts on the evening of d and the recovery
-scored when waking up on d+1. Covariates are the strain accumulated on d and the
-calendar load of d, both of which precede that sleep.
+Day alignment: day `d` is the day the behavior happens (e.g. coffee at 4pm on d). Its
+outcomes are the main sleep that starts on the evening of d and the readiness scored when
+waking up on d+1. Covariates are the load accumulated on d and the calendar load of d,
+both of which precede that sleep.
 
-Inputs are lists of row dicts as produced by `src.ingestion.whoop_mappers` (or read
-back from the database), so the same code serves live and synthetic data.
+Wearable-specific parsing lives in src/sources/ (e.g. src/sources/whoop.py).
 """
-from datetime import date, datetime, timedelta, timezone
-
 import pandas as pd
+
+from src.analysis.records import NUMERIC_FIELDS, RECORD_FIELDS, DailyRecord
 
 PANEL_METRICS = [
     "recovery_score", "hrv_rmssd_milli", "resting_heart_rate", "respiratory_rate",
@@ -18,109 +18,21 @@ PANEL_METRICS = [
 ]
 CALENDAR_COLUMNS = ["event_count", "busy_minutes", "meeting_minutes",
                     "longest_free_block_min", "back_to_back_count"]
-SLEEP_DAY_SHIFT = timedelta(hours=12)  # a sleep starting before noon belongs to the previous day
 
 
-def parse_offset(value: str | None) -> int | None:
-    """WHOOP timezone_offset like "-07:00" -> minutes east of UTC."""
-    if not value:
-        return None
-    sign = -1 if value.startswith("-") else 1
-    hours, minutes = value.lstrip("+-").split(":")
-    return sign * (int(hours) * 60 + int(minutes))
-
-
-def _local(dt: datetime, offset_min: int | None) -> datetime:
-    if dt.tzinfo is None:  # SQLite drops tzinfo; values are stored in UTC
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(minutes=offset_min or 0)
-
-
-def _scored(row: dict) -> bool:
-    return row.get("score_state") in (None, "SCORED")
-
-
-def sleep_day(row: dict) -> date:
-    return (_local(row["start"], parse_offset(row.get("timezone_offset"))) - SLEEP_DAY_SHIFT).date()
-
-
-def cycle_day(row: dict) -> date:
-    """A cycle's day is the local date of its midpoint, which is robust to whether a
-    cycle is counted from sleep onset or from waking up."""
-    offset = parse_offset(row.get("timezone_offset"))
-    start = _local(row["start"], offset)
-    end = _local(row["end"], offset) if row.get("end") else start + timedelta(hours=24)
-    return (start + (end - start) / 2).date()
-
-
-def sleep_need_minutes(raw: dict | None) -> tuple[float | None, float | None]:
-    """WHOOP's sleep need from a raw sleep payload: (baseline, total) in minutes.
-
-    total = baseline + need from sleep debt + need from recent strain - credit from naps.
-    Returns (None, None) when the payload has no sleep_needed block.
-    """
-    need = ((raw or {}).get("score") or {}).get("sleep_needed") or {}
-    base = need.get("baseline_milli")
-    if base is None:
-        return None, None
-    extra = sum(need.get(k) or 0 for k in ("need_from_sleep_debt_milli", "need_from_recent_strain_milli"))
-    total = base + extra + (need.get("need_from_recent_nap_milli") or 0)  # nap credit is negative
-    return round(base / 60_000, 1), round(total / 60_000, 1)
-
-
-def build_panel(
-    sleeps: list[dict],
-    recoveries: list[dict],
-    cycles: list[dict],
-    calendar: list[dict] | None = None,
-) -> pd.DataFrame:
-    """DataFrame indexed by behavior day with outcome metrics and covariates."""
-    # Main (non-nap) scored sleep per behavior day; if several, keep the longest.
-    sleep_rows = []
-    for s in sleeps:
-        if s.get("nap") or not _scored(s) or s.get("start") is None:
-            continue
-        stages = [s.get("light_min"), s.get("deep_min"), s.get("rem_min")]
-        need_base, need_total = sleep_need_minutes(s.get("raw"))
-        sleep_rows.append(dict(
-            day=sleep_day(s),
-            sleep_id=str(s["id"]),
-            in_bed_min=s.get("in_bed_min") or 0.0,
-            total_sleep_min=sum(stages) if all(v is not None for v in stages) else None,
-            deep_min=s.get("deep_min"),
-            rem_min=s.get("rem_min"),
-            sleep_performance_pct=s.get("sleep_performance_pct"),
-            sleep_efficiency_pct=s.get("sleep_efficiency_pct"),
-            respiratory_rate=s.get("respiratory_rate"),
-            tz_offset_min=parse_offset(s.get("timezone_offset")),
-            sleep_start_local=_local(s["start"], parse_offset(s.get("timezone_offset"))),
-            sleep_need_baseline_min=need_base,
-            sleep_need_total_min=need_total,
-        ))
-    if not sleep_rows:
-        return pd.DataFrame(columns=["day", *PANEL_METRICS]).set_index("day")
-    panel = (pd.DataFrame(sleep_rows).sort_values("in_bed_min")
-             .groupby("day").tail(1).set_index("day").sort_index())
-
-    rec = {str(r["sleep_id"]): r for r in recoveries if r.get("sleep_id") and _scored(r)}
-    for col in ("recovery_score", "hrv_rmssd_milli", "resting_heart_rate"):
-        panel[col] = [rec.get(sid, {}).get(col) for sid in panel["sleep_id"]]
-    panel["user_calibrating"] = [rec.get(sid, {}).get("user_calibrating") for sid in panel["sleep_id"]]
-
-    strain = {}
-    for c in sorted(cycles, key=lambda c: c["start"]):
-        if _scored(c) and c.get("strain") is not None:
-            strain[cycle_day(c)] = c["strain"]
-    panel["strain"] = [strain.get(d) for d in panel.index]
+def build_panel(records: list[DailyRecord], calendar: list[dict] | None = None) -> pd.DataFrame:
+    """DataFrame indexed by behavior day, one row per day (the last record wins on duplicates)."""
+    if not records:
+        return pd.DataFrame(columns=["day", *RECORD_FIELDS[1:]]).set_index("day")
+    panel = pd.DataFrame([r.to_dict() for r in records]).drop_duplicates("day", keep="last")
+    panel = panel.set_index("day").sort_index()
+    panel[NUMERIC_FIELDS] = panel[NUMERIC_FIELDS].apply(pd.to_numeric, errors="coerce")
 
     cal = {r["day"]: r for r in (calendar or [])}
     for col in CALENDAR_COLUMNS:
-        panel[col] = [cal.get(d, {}).get(col) for d in panel.index]
+        panel[col] = pd.to_numeric(pd.Series([cal.get(d, {}).get(col) for d in panel.index],
+                                             index=panel.index), errors="coerce")
     panel["has_calendar"] = [d in cal for d in panel.index]
-
     panel["dow"] = [d.weekday() for d in panel.index]  # Monday = 0
     panel.index.name = "day"
-    numeric = [*PANEL_METRICS, "strain", *CALENDAR_COLUMNS, "tz_offset_min",
-               "sleep_need_baseline_min", "sleep_need_total_min"]
-    panel[numeric] = panel[numeric].apply(pd.to_numeric, errors="coerce")
     return panel

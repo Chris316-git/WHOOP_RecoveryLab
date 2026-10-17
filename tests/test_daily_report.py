@@ -21,7 +21,7 @@ def panel(last_recovery=80, last_sleep=420):
         "total_sleep_min": [480.0] * len(days),
         "deep_min": [90.0] * len(days),
         "rem_min": [100.0] * len(days),
-        "strain": [10.0] * len(days),
+        "load": [10.0] * len(days),
     }, index=pd.Index(days, name="day"))
     df.loc[TODAY - timedelta(days=1), ["recovery_score", "total_sleep_min"]] = [last_recovery, last_sleep]
     return df
@@ -47,7 +47,7 @@ def test_free_windows_between_events():
     assert w[0]["start"] == "13:00"
 
 
-def test_summary_compares_with_own_baseline_and_suggests():
+def test_summary_compares_with_own_baseline_and_picks_a_focus():
     events = [dict(start=at(9), end=at(17), attendee_count=3)]
     s = build_daily_summary(panel(), TODAY, TZ, events, now=at(8))
     rec = s["metrics"][0]
@@ -56,10 +56,11 @@ def test_summary_compares_with_own_baseline_and_suggests():
     sleep = next(m for m in s["metrics"] if m["key"] == "total_sleep_min")
     assert sleep["delta"] == -60 and sleep["status"] == "worse"
     assert s["calendar"]["busy_hours"] == 8
-    assert any("shorter than your usual" in t for t in s["suggestions"])
-    assert any("Heavy calendar" in t for t in s["suggestions"])
+    f = s["focus"]
+    assert f["focus"] == "go_hard" and f["block"]["start"] == "17:00" and f["block"]["end"] == "18:00"
     subject, html, text = render_email(s)
-    assert "Recovery 80%" in subject and "Free" in text
+    assert "Recovery 80%" in subject and "Good day for a hard session" in subject and "Free" in text
+    assert "Today&#x27;s focus" in html or "Today's focus" in html
     assert ">80</span>" in html and "Green" in html and "RECOVERY LAB" in html and "{" not in html
 
 

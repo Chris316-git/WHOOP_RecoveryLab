@@ -1,0 +1,55 @@
+"""Runtime settings as one explicit, immutable object.
+
+Code that needs configuration takes a `Settings` argument instead of reading environment
+variables at import time, so the same functions can run against another database, another
+mail server or test doubles. `Settings.from_env()` builds the default from `.env` and the
+process environment (GitHub Actions secrets arrive as environment variables).
+"""
+import os
+from dataclasses import dataclass, field
+
+from src import config  # noqa: F401  (loads .env into the environment)
+
+
+@dataclass(frozen=True)
+class SmtpSettings:
+    host: str = "smtp.gmail.com"
+    port: int = 465
+    user: str = ""
+    password: str = ""
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.user and self.password)
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str = ""
+    token_store: str = "file"                 # "file" | "db"
+    token_encryption_key: str = ""
+    report_timezone: str = "America/Los_Angeles"
+    report_email_to: str = ""
+    google_calendar_ids: tuple[str, ...] = ("primary",)
+    smtp: SmtpSettings = field(default_factory=SmtpSettings)
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
+        env = os.environ if env is None else env
+        get = lambda k, d="": (env.get(k) or d).strip()  # noqa: E731
+        return cls(
+            database_url=get("DATABASE_URL"),
+            token_store=get("TOKEN_STORE", "file").lower(),
+            token_encryption_key=get("TOKEN_ENCRYPTION_KEY"),
+            report_timezone=get("REPORT_TIMEZONE", "America/Los_Angeles"),
+            report_email_to=get("REPORT_EMAIL_TO"),
+            google_calendar_ids=tuple(c.strip() for c in get("GOOGLE_CALENDAR_IDS", "primary").split(",") if c.strip()),
+            smtp=SmtpSettings(host=get("SMTP_HOST", "smtp.gmail.com"), port=int(get("SMTP_PORT", "465")),
+                              user=get("SMTP_USER"), password=get("SMTP_PASSWORD")),
+        )
+
+    def require(self, name: str) -> str:
+        value = getattr(self, name)
+        if not value:
+            raise RuntimeError(f"Missing setting {name.upper()}. Check your .env file or GitHub Secrets.")
+        return value

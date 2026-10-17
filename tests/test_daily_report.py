@@ -79,3 +79,15 @@ def test_hrv_chart_and_focus_details_render():
     _, html, text = render_email(s)
     assert "HRV, last 14 nights" in html and html.count("border-radius:3px 3px 0 0") >= 5
     assert "TODAY'S FOCUS" in text
+
+
+def test_email_shows_only_what_stands_out():
+    from src.report.render import _body
+    s = build_daily_summary(panel(last_recovery=80, last_sleep=300), TODAY, TZ, [], now=at(9))
+    html = _body(s)
+    assert "Total sleep" not in html or "Sleep <b" in html          # total sleep sits in the headline line
+    assert "Deep sleep" not in html and "REM sleep" not in html     # typical values are not repeated
+    s["focus"]["reasons"] = ["you are behind on sleep this week"]
+    s["signals"]["sleep"] = dict(shortfall_min=300, nights_measured=7, nights_short=5, need_min=480,
+                                 need_source="whoop")
+    assert "Sleep, last 7 nights" not in _body(s)                    # already a reason in the focus card

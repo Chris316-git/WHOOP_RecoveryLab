@@ -215,28 +215,63 @@ def _hero(summary: dict) -> str:
     return _card(body)
 
 
-def _metrics(summary: dict) -> str:
-    tiles = [m for m in summary["metrics"][1:]]
-    cells = []
-    for m in tiles:
-        sub = (f'{_arrow(m)}{escape(_delta(m))}' if m["delta"] is not None
-               else escape(STATUS_TEXT[m["status"]]))
-        cells.append(
-            f'<td width="50%" style="padding:10px 12px;vertical-align:top;background:#f9fafb;border-radius:10px">'
-            f'<div style="font-size:12px;color:{MUTED}">{escape(m["label"])}</div>'
-            f'<div style="font-size:20px;font-weight:600;color:{INK};margin:2px 0">'
-            f'{escape(_fmt(m["value"], m["unit"]))}</div>'
-            f'<div style="font-size:12px;color:{INK_2}">{sub}</div></td>')
-    rows = []
-    for i in range(0, len(cells), 2):
-        pair = cells[i:i + 2] + (['<td width="50%"></td>'] if len(cells[i:i + 2]) == 1 else [])
-        rows.append(f'<tr>{pair[0]}<td style="width:8px"></td>{pair[1]}</tr>'
-                    f'<tr><td colspan="3" style="height:8px;font-size:0;line-height:0">&nbsp;</td></tr>')
-    grid = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{"".join(rows)}</table>')
-    return _card(f'{_title("Last night")}{grid}', pad="20px 22px 12px")
+HEADLINE_METRICS = ("total_sleep_min", "hrv_rmssd_milli", "resting_heart_rate")
+SHORT_LABEL = {"total_sleep_min": "Sleep", "hrv_rmssd_milli": "HRV", "resting_heart_rate": "Resting HR"}
 
 
-CHART_H = 56
+def _numbers(summary: dict) -> str:
+    """Last night in one line, plus only what stood out. Typical values are not repeated."""
+    by_key = {m["key"]: m for m in summary["metrics"]}
+
+    def headline(m: dict) -> str:
+        delta = (f' <span style="font-size:13px;color:{INK_2}">{_arrow(m)}{escape(_delta(m))}</span>'
+                 if m["status"] in ("better", "worse") else "")
+        return (f'<span style="color:{MUTED}">{SHORT_LABEL[m["key"]]}</span> '
+                f'<b style="color:{INK}">{escape(_fmt(m["value"], m["unit"]))}</b>{delta}')
+    head = "<br>".join(headline(by_key[k]) for k in HEADLINE_METRICS
+                       if k in by_key and by_key[k]["value"] is not None)
+    notable = [m for m in summary["metrics"][1:]
+               if m["status"] in ("better", "worse") and m["key"] not in HEADLINE_METRICS]
+    pills = "".join(
+        f'<span style="display:inline-block;margin:8px 6px 0 0;padding:4px 10px;border-radius:999px;'
+        f'background:{"#fbe3e3" if m["status"] == "worse" else "#e3f5e3"};color:{INK};font-size:13px">'
+        f'{_arrow(m)}{escape(m["label"])} {escape(_fmt(m["value"], m["unit"]))} ({escape(_delta(m))})</span>'
+        for m in notable)
+    any_flag = notable or any(by_key[k]["status"] in ("better", "worse") for k in HEADLINE_METRICS if k in by_key)
+    rest = (f'<div style="font-size:13px;color:{MUTED};margin-top:8px">'
+            f'{"Everything else was typical for you." if any_flag else "All typical for you."}</div>')
+    return f'<div style="font-size:15px;line-height:1.5">{head}</div>{pills}{rest}' if head else ""
+
+
+# A trend line is left out when today's focus already gives it as a reason.
+TREND_TOPICS = {"HRV": ["hrv"], "Resting heart rate": ["resting heart rate"],
+                "Sleep": ["sleep need", "behind on sleep", "below your need"], "Training load": ["training load"]}
+
+
+def _body(summary: dict) -> str:
+    """Last night and the week in one card: the numbers, the HRV chart, and only the trends
+    that are outside your normal range (the focus card already explains what matters)."""
+    numbers = _numbers(summary)
+    chart = _hrv_chart(summary.get("signals") or {})
+    reasons = " ".join((summary.get("focus") or {}).get("reasons") or []).lower()
+    covered = [k for k, words in TREND_TOPICS.items() if any(w in reasons for w in words)]
+    lines = [(t, tone) for t, tone in trend_lines(summary)
+             if tone != "neutral" and not any(t.startswith(k) for k in covered)]
+    dot = {"good": GOOD, "bad": BAD}
+    rows = "".join(
+        f'<tr><td style="width:18px;vertical-align:top;padding:5px 0;color:{dot[tone]};font-size:12px">&#9679;</td>'
+        f'<td style="padding:4px 0;color:{INK_2};font-size:14px;line-height:1.45">{escape(text)}</td></tr>'
+        for text, tone in lines)
+    week = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>' if rows
+            else f'<div style="font-size:13px;color:{MUTED}">'
+                 f'{"Nothing else stands out this week." if covered else "This week: within your normal range."}</div>')
+    if not numbers and not chart and not rows:
+        return ""
+    spacer = '<div style="height:16px;font-size:0;line-height:0">&nbsp;</div>'
+    return _card(f'{_title("Last night")}{numbers}{spacer}{_title("This week")}{chart}{week}')
+
+
+CHART_H = 44
 
 
 def _hrv_chart(sig: dict) -> str:
@@ -283,20 +318,6 @@ def _hrv_chart(sig: dict) -> str:
             f'<td style="font-size:11px;color:{MUTED};padding-top:3px;text-align:right">{last_day}'
             f'{f" &middot; {latest:g} ms" if latest is not None else ""}</td></tr></table>'
             f'<div style="height:12px;font-size:0;line-height:0">&nbsp;</div>')
-
-
-def _trends(summary: dict) -> str:
-    lines = trend_lines(summary)
-    chart = _hrv_chart(summary.get("signals") or {})
-    if not lines and not chart:
-        return ""
-    dot = {"good": GOOD, "bad": BAD, "neutral": "#9ca3af"}
-    rows = "".join(
-        f'<tr><td style="width:18px;vertical-align:top;padding:5px 0;color:{dot[tone]};font-size:12px">&#9679;</td>'
-        f'<td style="padding:4px 0;color:{INK_2};font-size:14px;line-height:1.45">{escape(text)}</td></tr>'
-        for text, tone in lines)
-    return _card(f'{_title("Trends")}{chart}<table role="presentation" width="100%" cellpadding="0" '
-                 f'cellspacing="0">{rows}</table>')
 
 
 def _today(summary: dict) -> str:
@@ -381,7 +402,7 @@ def _focus(summary: dict) -> str:
                       f'<span style="color:{MUTED}"> &nbsp;&middot;&nbsp; </span>'
                       f'<span style="font-size:14px;color:{INK_2}">{escape(b["title"])}</span></td></tr></table>')
     actions_html = _action_buttons(summary.get("actions"))
-    small = [x for x in [*f.get("alternatives", []), f.get("note"), f.get("caveat")] if x]
+    small = [x for x in [*f.get("alternatives", []), f.get("note")] if x]   # the caveat is in the footer
     small_html = "".join(f'<div style="font-size:13px;color:{MUTED};margin-top:8px;line-height:1.45">'
                          f'{escape(x)}</div>' for x in small)
     if small_html:
@@ -450,11 +471,12 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'RECOVERY LAB</td><td style="text-align:right;font-size:13px;color:{MUTED}">'
               f'{escape(summary["weekday"])}, {escape(summary["date"])}</td></tr></table></td></tr>')
     footer = (f'<tr><td style="padding:8px 4px 0;font-size:12px;color:{MUTED};line-height:1.5">'
-              f'Compared with your own recent history. The focus is chosen by transparent rules, not '
+              f'Compared with your own recent history. Suggestions are rules of thumb, not a diagnosis; adjust to how '
+              f'you feel. The focus is chosen by transparent rules, not '
               f'experiment results; a single day cannot show what caused what. Not medical advice. '
               f'Change the delivery time with <code>make settings</code>.</td></tr>')
-    content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _metrics(summary)
-               + _trends(summary) + _today(summary) + footer)
+    content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _body(summary)
+               + _today(summary) + footer)
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>'

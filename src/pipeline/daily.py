@@ -26,6 +26,7 @@ from src.report.data import (
     load_plan,
     load_recent_focuses,
     load_recent_panel,
+    load_recent_plans,
     load_recent_workouts,
 )
 from src.report.render import render_email
@@ -75,6 +76,7 @@ class DailyPipeline:
     clock: Clock = _system_clock
     preview_dir: Path | None = None
     wording_call: Callable | None = None             # LLM transport; None = the Claude API (tests inject a fake)
+    reasoning_call: Callable | None = None           # same, for the AI reasoning engine
 
     # ---- stage 0: context ----
     def context(self, user_id: str) -> tuple[str, ReportSchedule]:
@@ -120,6 +122,7 @@ class DailyPipeline:
             habits = activity_profile(load_recent_workouts(session, uid, today), today,
                                       preferred_sports=parse_sports(prefs.sports if prefs else None))
             plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
+            history = load_recent_plans(session, uid, today)
         summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted,
                                       habits=habits)
         # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
@@ -129,12 +132,33 @@ class DailyPipeline:
         for k, plan in plans.items():
             if plan is None or (k > 1 and plan["outcome"] not in (None, "no_data")):
                 continue
-            plan["title"] = TITLES.get(plan["focus"], plan["focus"])
+            plan["title"] = plan.get("title") or TITLES.get(plan["focus"], plan["focus"])
             review = evaluate(plan, panel, today - timedelta(days=k))
             if review:
                 summary["reviews"][k] = review
         summary["yesterday"] = summary["reviews"].get(1)
+        from src.reasoning.evidence import build_case
+        summary["reasoning_case"] = build_case(summary, panel, today, now, habits, history)
         return summary
+
+    # ---- stage 2a: AI reasoning ----
+    def reason(self, summary: dict, run: UserRun) -> None:
+        """Let the AI decide today's focus from the evidence. Its plan replaces the rule engine's
+        only if it passes every check (and REASONING_MODE is "ai"); both are stored for evaluation."""
+        from src.reasoning.engine import reason
+        summary["reasoning"] = dict(status="off", problems=[], output=None)
+        mode, case = self.settings.reasoning_mode, summary.get("reasoning_case")
+        has_key = bool(self.settings.anthropic_api_key) or self.reasoning_call is not None
+        if mode == "off" or case is None or not has_key or not summary.get("last_night_scored"):
+            return
+        result = reason(case, summary, self.settings.anthropic_api_key or "test", self.settings.reasoning_model,
+                        call=self.reasoning_call)
+        summary["reasoning"] = {k: result[k] for k in ("status", "problems", "output")}
+        detail = f" ({', '.join(result['problems'])})" if result["problems"] else ""
+        run.steps.append(f"reasoning: {result['status']}{detail}")   # labels only, never content
+        if result["status"] == "ok" and mode == "ai":
+            summary["rule_focus"] = summary["focus"]
+            summary["focus"] = result["focus"]
 
     # ---- stage 2b: wording ----
     def word(self, summary: dict, run: UserRun) -> None:
@@ -142,6 +166,8 @@ class DailyPipeline:
         Only the status is logged, never the text."""
         from src.llm.wording import word_focus
         if not self.settings.anthropic_api_key and self.wording_call is None:
+            return
+        if summary["focus"].get("engine") == "ai":   # the AI already wrote its own headline
             return
         message, status = word_focus(summary, self.settings.anthropic_api_key or "test", self.settings.llm_model,
                                      call=self.wording_call)
@@ -176,10 +202,17 @@ class DailyPipeline:
             existing = session.get(DailyPlan, (int(user_id), now.date()))
             if existing is not None and (existing.response or existing.calendar_status):
                 return "decided"
+            rule = summary.get("rule_focus") or f
+            r = summary.get("reasoning") or {}
             upsert(session, DailyPlan, [dict(
-                user_id=int(user_id), day=now.date(), focus=f["focus"], score=float(f["score"]),
+                user_id=int(user_id), day=now.date(), focus=f["focus"], score=float(f["score"] or 0.0),
+                title=f.get("title"), engine=f.get("engine", "rules"),
                 reasons=f["reasons"], block=f["block"], considered=[list(c) for c in f["considered"]],
                 timezone=tz,
+                rule_focus=dict(focus=rule["focus"], title=rule.get("title"), score=rule.get("score"),
+                                confidence=rule.get("confidence"), block=rule.get("block")),
+                ai_output=r.get("output"), ai_status=r.get("status"), ai_problems=r.get("problems") or None,
+                evidence=summary.get("reasoning_case"),
             )], ["user_id", "day"])
             session.commit()
         return "open"
@@ -251,6 +284,7 @@ class DailyPipeline:
                 run.outcome, run.detail = "waiting", reason
                 return run
             run.detail = reason
+        self.reason(summary, run)
         self.word(summary, run)
         if mode == "preview":
             path = self.save_preview(user_id, summary, run.notices)

@@ -149,3 +149,39 @@ def test_wording_falls_back_and_logs_status_only(factory):
     assert not any("Zebrafish" in step for step in run.steps)            # never the text in logs
     assert any(step.startswith("wording: ") for step in run.steps)    # status only (template, skipped, ...)
     assert "Zebrafish" not in outbox[0][2]                               # the template went out instead
+
+
+AI_PLAN = dict(focus_type="prioritize_sleep", title="Ease into an earlier night", confidence="tentative",
+               headline="Recovery looks fine, so tonight is a good chance to start winding down a little earlier.",
+               reasons=[dict(text="Your recovery is in a good place today.", evidence=["E1"])], counter=[],
+               action=dict(type="calendar_block", title="Wind down: lights low", start="22:00", minutes=30),
+               uncertainty=None, hypothesis=None)
+
+
+def test_ai_plan_is_shown_and_both_engines_are_stored(factory):
+    import json as _json
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    p.settings = Settings(report_email_to="me@example.com", reasoning_mode="ai")
+    p.reasoning_call = lambda key, model, case: _json.dumps(AI_PLAN)
+    run = p.run_user(str(USER), mode="now")
+    assert "reasoning: ok" in run.steps
+    assert "Ease into an earlier night" in outbox[0][2] and "reasoned by AI" in outbox[0][2]
+    with factory() as s:
+        plan = s.get(DailyPlan, (USER, TODAY))
+        assert plan.engine == "ai" and plan.ai_status == "ok" and plan.title == "Ease into an earlier night"
+        assert plan.block["start"] == "22:00" and plan.rule_focus["focus"] and plan.evidence["evidence"]
+
+
+def test_rejected_ai_plan_falls_back_to_the_rules(factory):
+    import json as _json
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    bad = dict(AI_PLAN, headline="Sleep 937 extra minutes tonight.")          # invented number
+    p.reasoning_call = lambda key, model, case: _json.dumps(bad)
+    run = p.run_user(str(USER), mode="now")
+    assert "reasoning: rejected (numbers)" in run.steps
+    assert "Ease into an earlier night" not in outbox[0][2]
+    with factory() as s:
+        plan = s.get(DailyPlan, (USER, TODAY))
+        assert plan.engine == "rules" and plan.ai_status == "rejected" and plan.ai_problems == ["numbers"]

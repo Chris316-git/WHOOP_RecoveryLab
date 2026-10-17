@@ -408,7 +408,7 @@ def _focus(summary: dict) -> str:
                          f'{escape(x)}</div>' for x in small)
     if small_html:
         small_html = f'<div style="margin-top:6px">{small_html}</div>'
-    focus_title = _title("Today's focus")
+    focus_title = _title("Today's focus" + (" · reasoned by AI from your data" if f.get("engine") == "ai" else ""))
     body = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td style="width:4px;background:{accent};border-radius:4px"></td><td style="padding-left:16px">'
             f'{focus_title}'
@@ -471,9 +471,11 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'cellspacing="0"><tr><td style="font-size:13px;font-weight:700;letter-spacing:.08em;color:{INK}">'
               f'RECOVERY LAB</td><td style="text-align:right;font-size:13px;color:{MUTED}">'
               f'{escape(summary["weekday"])}, {escape(summary["date"])}</td></tr></table></td></tr>')
+    chosen_by = ("an AI model reasoning over your computed data, checked by code"
+                 if (summary.get("focus") or {}).get("engine") == "ai" else "transparent rules")
     footer = (f'<tr><td style="padding:8px 4px 0;font-size:12px;color:{MUTED};line-height:1.5">'
               f'Compared with your own recent history. Suggestions are rules of thumb, not a diagnosis; adjust to how '
-              f'you feel. The focus is chosen by transparent rules, not '
+              f'you feel. The focus is chosen by {chosen_by}, not by '
               f'experiment results; a single day cannot show what caused what. Not medical advice. '
               f'Change the delivery time with <code>make settings</code>.</td></tr>')
     content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _body(summary)

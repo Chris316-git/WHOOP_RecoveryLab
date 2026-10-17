@@ -170,6 +170,18 @@ suggested block), the response (`None` = no response, `added`, `dismissed`, `not
 and the calendar state (`scheduled`, `removed`, the event ID). The outcome is a fourth,
 separate field filled in the next morning (Phase 3).
 
+## Phase 2b: AI reasoning engine (done)
+
+The rule engine became the fallback. A Claude model reads a numbered evidence file built in
+code and decides the day's focus and action itself (not just choosing from a list), so it can
+notice things the rules do not encode, such as advice that keeps not being followed, and
+propose a smaller, more realistic step. A code validator checks evidence ids, numbers, safety
+and calendar feasibility before anything is shown. Both engines' choices, the evidence and the
+validator's verdict are stored per day; `scripts/evaluate.py` reports pass rate, rejection
+reasons, blocked unsafe suggestions, agreement with the rules, personalization and outcomes by
+engine. Next: a randomized mode (rules or AI per day) for a fair comparison of adherence, and
+an optional one-tap question when the AI lacks information.
+
 ## Phase 3: Feedback loop
 
 Goal: know, every day, whether recommendations are followed and whether they help, without

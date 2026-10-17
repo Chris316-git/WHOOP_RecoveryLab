@@ -78,7 +78,7 @@ def load_plan(session: Session, user_id: int, day: date) -> dict | None:
     p = session.get(DailyPlan, (user_id, day))
     if p is None:
         return None
-    return dict(focus=p.focus, block=p.block, final_block=p.final_block, response=p.response,
+    return dict(focus=p.focus, title=p.title, block=p.block, final_block=p.final_block, response=p.response,
                 calendar_status=p.calendar_status, outcome=p.outcome)
 
 
@@ -88,3 +88,12 @@ def load_recent_workouts(session: Session, user_id: int, today: date, days: int 
     rows = session.scalars(select(Workout).where(Workout.user_id == user_id, Workout.start >= lo))
     return [dict(sport_name=w.sport_name, start=w.start, end=w.end, timezone_offset=w.timezone_offset,
                  strain=w.strain) for w in rows if w.score_state in (None, "SCORED")]
+
+
+def load_recent_plans(session: Session, user_id: int, today: date, days: int = 7) -> list[dict]:
+    """The last `days` plans with the user's responses and measured outcomes (for the AI's case file)."""
+    rows = session.scalars(select(DailyPlan).where(
+        DailyPlan.user_id == user_id, DailyPlan.day >= today - timedelta(days=days), DailyPlan.day < today))
+    return [dict(day=p.day.isoformat(), focus=p.focus, title=p.title, block=p.block, final_block=p.final_block,
+                 response=p.response, calendar_status=p.calendar_status, outcome=p.outcome,
+                 outcome_detail=p.outcome_detail) for p in rows]

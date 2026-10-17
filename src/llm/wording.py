@@ -75,15 +75,16 @@ def check(message: str, data: dict) -> str | None:
     return None
 
 
-def call_claude(api_key: str, model: str, data: dict, timeout: float = 30.0) -> str:
+def call_claude(api_key: str, model: str, data: dict, timeout: float = 30.0, system: str = SYSTEM,
+                max_tokens: int = 2000) -> str:
     """One Messages API call; returns the reply text. Raises on any HTTP or format problem."""
     import httpx
     resp = httpx.post(API_URL, timeout=timeout, headers={
         "x-api-key": api_key, "anthropic-version": API_VERSION, "content-type": "application/json",
     }, json={
         "model": model,
-        "max_tokens": 2000,   # room for adaptive thinking; the reply itself is short
-        "system": SYSTEM,
+        "max_tokens": max_tokens,   # room for adaptive thinking; the reply itself is short
+        "system": system,
         "messages": [{"role": "user", "content": json.dumps(data, ensure_ascii=False)}],
     })
     resp.raise_for_status()

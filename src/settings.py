@@ -36,6 +36,8 @@ class Settings:
     action_signing_key: str = ""              # secret for signing the links in the email
     anthropic_api_key: str = ""               # optional: friendlier wording of the daily focus
     llm_model: str = "claude-haiku-5-5"
+    reasoning_mode: str = "ai"                # ai: show the AI's plan when it passes the checks; shadow; off
+    reasoning_model: str = "claude-sonnet-5-5"
 
     @property
     def actions_enabled(self) -> bool:
@@ -59,6 +61,8 @@ class Settings:
             action_signing_key=get("ACTION_SIGNING_KEY"),
             anthropic_api_key=get("ANTHROPIC_API_KEY"),
             llm_model=get("LLM_MODEL", "claude-haiku-5-5"),
+            reasoning_mode=get("REASONING_MODE", "ai").lower(),
+            reasoning_model=get("REASONING_MODEL", "claude-sonnet-5-5"),
         )
 
     def require(self, name: str) -> str:

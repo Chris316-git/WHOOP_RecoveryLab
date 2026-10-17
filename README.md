@@ -42,7 +42,7 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time between 07:00 and midnight
 - [x] Suggestions built from your own workout history: the easy or hard version of the activities you actually do, at your usual time
 - [x] Optional one-tap "Add to calendar" (with Undo) for focuses that need a time block, on a dedicated "Recovery Lab" calendar
-- [x] Optional friendlier wording of the focus by Claude, with a numeric consistency check and a template fallback
+- [x] AI reasoning engine (optional): Claude decides the focus and designs the action from a numbered evidence file, a code validator checks every claim, the rule engine is the fallback, and both are stored for evaluation
 - [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
 - [ ] Feedback loop, the rest: did it help, over many days?
 - [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
@@ -141,6 +141,28 @@ their own, so opening a link never changes anything by itself: the page sends th
 a line of JavaScript (which most scanners do not run) and shows a plain button otherwise.
 Without `PUBLIC_BASE_URL`, emails are sent without buttons.
 
+## AI reasoning engine (optional)
+
+With `ANTHROPIC_API_KEY` set, the morning plan is decided by a Claude model instead of the rule
+engine, within limits enforced in code:
+
+1. **Evidence builder** (`src/reasoning/evidence.py`): numbered facts computed in Python
+   (today's state, trends vs. your normal range, load, sleep, free time, your activities, and
+   the last 7 days of suggestions, responses and measured outcomes).
+2. **Reasoning** (`src/reasoning/engine.py`): the model decides what matters most today and
+   designs one action, e.g. a smaller step when earlier advice kept not being followed.
+   It returns structured JSON with cited evidence ids, uncertainty and hedged hypotheses.
+3. **Safety validator** (`src/reasoning/validate.py`): cited ids must exist, every number must
+   come from the evidence, no hard session against the data, calendar blocks only in free
+   time and early enough before bedtime, no medical, medication or diet advice. Any failure
+   falls back to the rule engine.
+4. **Evaluation** (`src/reasoning/evaluate.py`, `uv run python scripts/evaluate.py`): pass
+   rate and rejection reasons, blocked unsafe suggestions, agreement with the rules, use of
+   personal context, and responses and outcomes by engine.
+
+`REASONING_MODE=shadow` keeps showing the rules' plan while still recording the AI's, and
+`REASONING_MODE=off` disables it. The calendar is still only written when you tap the button.
+
 ## Project layout
 
 ```
@@ -157,7 +179,8 @@ src/
   notify/      Email delivery
   settings.py  Runtime settings as one immutable object (from .env / environment)
   actions/     Add to calendar / Change time / Dismiss / Undo: signed links, calendar writes, pages
-  llm/         Optional wording of the daily focus: compact input, numeric check, template fallback
+  reasoning/   AI reasoning engine: evidence builder, LLM call, safety validator, evaluation report
+  llm/         Claude API helper and the wording fallback for rule-based plans
   api/         FastAPI app: WHOOP login flow and the action endpoint
 scripts/       Thin command-line entry points (daily.py runs the pipeline)
 .github/       GitHub Actions workflow for the daily job

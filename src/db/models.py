@@ -202,10 +202,18 @@ class DailyPlan(Base):
     timezone: Mapped[str | None] = mapped_column(String(64))
     # recommendation
     focus: Mapped[str] = mapped_column(String(32))                 # e.g. lower_intensity, none
+    title: Mapped[str | None] = mapped_column(String(120))         # shown title (the AI writes its own)
+    engine: Mapped[str | None] = mapped_column(String(16))         # "ai" or "rules": who made the shown plan
     score: Mapped[float] = mapped_column(Float)
     reasons: Mapped[list] = mapped_column(JSONB, default=list)
     block: Mapped[dict | None] = mapped_column(JSONB)              # suggested time block, if any
     considered: Mapped[list] = mapped_column(JSONB, default=list)  # every candidate and its score
+    # reasoning record, for evaluating the AI against the rule engine
+    rule_focus: Mapped[dict | None] = mapped_column(JSONB)         # what the rule engine chose
+    ai_output: Mapped[dict | None] = mapped_column(JSONB)          # the AI's raw structured answer
+    ai_status: Mapped[str | None] = mapped_column(String(16))      # ok | rejected | error | off
+    ai_problems: Mapped[list | None] = mapped_column(JSONB)        # why the validator rejected it
+    evidence: Mapped[dict | None] = mapped_column(JSONB)           # the case file the AI saw
     # response
     response: Mapped[str | None] = mapped_column(String(16))       # None | added | dismissed | not_useful
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

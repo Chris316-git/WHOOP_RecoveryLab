@@ -100,7 +100,7 @@ class ActionService:
             p = session.get(DailyPlan, (token.user_id, token.day))
             if p is None:
                 raise PlanNotFound("No plan found for this link.")
-            return dict(focus=p.focus, title=TITLES.get(p.focus, p.focus), reasons=p.reasons or [],
+            return dict(focus=p.focus, title=p.title or TITLES.get(p.focus, p.focus), reasons=p.reasons or [],
                         block=p.block, response=p.response, calendar_status=p.calendar_status,
                         final_block=p.final_block, calendar_id=p.calendar_id, event_id=p.event_id,
                         timezone=p.timezone or self.default_tz)

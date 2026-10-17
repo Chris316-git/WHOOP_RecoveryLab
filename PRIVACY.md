@@ -107,16 +107,21 @@ Recovery Lab sends data only to the services needed to run it:
 | GitHub Actions | Run the daily job | Encrypted credentials and database connection (as secrets) |
 | Email provider (e.g. Gmail) | Deliver the daily summary | The contents of the summary |
 | Web host (e.g. Render) | Run the endpoint behind the email links | Database connection and keys (as secrets); your clicks |
-| Anthropic API (optional) | Word the daily focus | The computed focus summary described below |
+| Anthropic API (optional) | Propose and word the daily focus | The computed case file described below |
 
-**Language model (optional):** if the operator sets an Anthropic API key, the day's focus is
-reworded by a Claude model. What is sent is only what Recovery Lab already computed for that
-email: the focus, its short reasons (which include summary numbers such as your 7-day HRV
-range, yesterday's strain or this week's sleep shortfall), today's recovery percentage, the
-suggested time block and yesterday's one-line outcome. Raw records, calendar events, your name
-and your email address are never sent. The reply is checked in code (every number must come
-from that input) and replaced by a fixed template if anything looks wrong. Without a key,
-nothing is sent. Anthropic's handling of API data is described in its own privacy policy.
+**Language model (optional):** if the operator sets an Anthropic API key, a Claude model reads
+a "case file" each morning and proposes the day's focus and action. The case file contains only
+values Recovery Lab already computed: last night's summary metrics and your 30-day medians,
+7-day trends against your normal range, training load and yesterday's strain, this week's sleep
+shortfall, your usual bedtime, today's free time blocks, your recurring activity types with
+their usual duration and time, and the last 7 days of suggestions with your responses and the
+measured outcome. Raw records, calendar event details, your name and your email address are
+never sent. The answer is validated in code (every number must come from the case file, no
+hard session against the data, calendar blocks only in free time, no medical, medication or
+diet advice); otherwise the rule-based plan is used. The case file, the model's answer and the
+validation result are stored with the day's plan so the AI can be evaluated against the rules.
+Without a key, nothing is sent. Anthropic's handling of API data is described in its own
+privacy policy.
 
 ## Retention
 

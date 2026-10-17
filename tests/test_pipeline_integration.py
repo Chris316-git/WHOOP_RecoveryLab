@@ -124,3 +124,15 @@ def test_yesterdays_focus_is_checked_from_data_and_stored(factory):
         y = s.get(DailyPlan, (USER, TODAY - timedelta(days=1)))
         assert y.outcome == "partly" and y.outcome_detail["minutes_late"] == 30
         assert y.response is None                         # no click is not a rejection
+
+
+def test_outcomes_missing_data_are_rechecked_later(factory):
+    two_days_ago = TODAY - timedelta(days=2)
+    with factory() as s:
+        s.add(DailyPlan(user_id=USER, day=two_days_ago, focus="prioritize_sleep", score=0.7, reasons=[],
+                        considered=[], block=dict(start="22:15", end="23:00", minutes=45, title="Wind down"),
+                        outcome="no_data"))     # the sleep was not scored when that email went out
+        s.commit()
+    make_pipeline(factory, []).run_user(str(USER), mode="now")
+    with factory() as s:
+        assert s.get(DailyPlan, (USER, two_days_ago)).outcome == "done"   # in bed at 23:00, target 23:00

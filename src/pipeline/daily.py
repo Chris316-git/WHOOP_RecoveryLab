@@ -37,6 +37,7 @@ from src.settings import Settings
 
 Sender = Callable[[str, str, str, str], None]   # (to, subject, html, text)
 Clock = Callable[[ZoneInfo], datetime]
+REVIEW_DAYS = 3   # re-check outcomes this many days back while their data was missing
 
 
 def _system_clock(zone: ZoneInfo) -> datetime:
@@ -112,12 +113,20 @@ class DailyPipeline:
             events = load_events_for_day(session, uid, today, tz) if user_id in self.google_users else None
             recent = load_recent_focuses(session, uid, today)
             muted = load_not_useful(session, uid, today)
-            yesterday = load_plan(session, uid, today - timedelta(days=1))
+            plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
         summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted)
-        # Did yesterday's focus happen? Read from the wearable data, so nobody has to check in.
-        if yesterday is not None:
-            yesterday["title"] = TITLES.get(yesterday["focus"], yesterday["focus"])
-            summary["yesterday"] = evaluate(yesterday, panel, today - timedelta(days=1))
+        # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
+        # Yesterday's is shown in the email; older days are re-checked while their data was
+        # still missing (e.g. sleep not scored yet when the email went out).
+        summary["reviews"] = {}
+        for k, plan in plans.items():
+            if plan is None or (k > 1 and plan["outcome"] not in (None, "no_data")):
+                continue
+            plan["title"] = TITLES.get(plan["focus"], plan["focus"])
+            review = evaluate(plan, panel, today - timedelta(days=k))
+            if review:
+                summary["reviews"][k] = review
+        summary["yesterday"] = summary["reviews"].get(1)
         return summary
 
     # ---- stage 3: deliver ----
@@ -156,19 +165,31 @@ class DailyPipeline:
         return "open"
 
     def save_outcome(self, user_id: str, summary: dict, now: datetime) -> None:
-        """Store what the wearable says about yesterday's focus on yesterday's plan."""
-        review = summary.get("yesterday")
-        if not review:
+        """Store what the wearable says about recent focuses on their plans."""
+        reviews = summary.get("reviews") or {}
+        if not reviews:
             return
         with self.session_factory() as session:
-            p = session.get(DailyPlan, (int(user_id), now.date() - timedelta(days=1)))
-            if p is None:
-                return
-            p.outcome = review["outcome"]
-            p.outcome_detail = dict(review["detail"], recovery_before=review["recovery_before"],
-                                    recovery_after=review["recovery_after"])
-            p.outcome_checked_at = datetime.now(timezone.utc)
+            for k, review in reviews.items():
+                p = session.get(DailyPlan, (int(user_id), now.date() - timedelta(days=k)))
+                if p is None:
+                    continue
+                p.outcome = review["outcome"]
+                p.outcome_detail = dict(review["detail"], recovery_before=review["recovery_before"],
+                                        recovery_after=review["recovery_after"])
+                p.outcome_checked_at = datetime.now(timezone.utc)
             session.commit()
+
+    def warm_up(self) -> None:
+        """Wake the free-tier web host just before the email goes out, so the first click on a
+        button does not wait for a cold start. Best effort: failures are ignored."""
+        if not self.settings.actions_enabled:
+            return
+        try:
+            import httpx
+            httpx.get(f"{self.settings.public_base_url}/healthz", timeout=60)
+        except Exception:
+            pass
 
     def action_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
         """Signed links, valid until 06:00 the next morning. Add to calendar / Change time /
@@ -218,6 +239,8 @@ class DailyPipeline:
         self.save_outcome(user_id, summary, now)
         if status == "open":
             summary["actions"] = self.action_links(user_id, summary, now)
+            if summary["actions"]:
+                self.warm_up()
         self.deliver(summary, run.notices)
         if mode == "scheduled":  # a manual send (make daily-now) is a test; it never cancels the real one
             self.mark_sent(user_id, now)

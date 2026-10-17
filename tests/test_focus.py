@@ -39,6 +39,7 @@ def test_high_load_and_low_hrv_lowers_intensity_with_an_easy_slot():
     assert f["focus"] == "lower_intensity"
     assert any("1.55x" in r for r in f["reasons"]) and any("HRV" in r for r in f["reasons"])
     assert f["block"]["minutes"] == 30 and f["block"]["start"] == "16:00"
+    assert f["schedulable"] is False   # "take it easy" is advice, not a calendar event
 
 
 def test_sleep_debt_turns_into_a_wind_down_before_target_bedtime():
@@ -47,7 +48,7 @@ def test_sleep_debt_turns_into_a_wind_down_before_target_bedtime():
     assert f["focus"] == "prioritize_sleep"
     # default bedtime 23:00 -> target 22:30 -> wind-down 21:45-22:30
     assert (f["block"]["start"], f["block"]["end"]) == ("21:45", "22:30")
-    assert "22:30" in f["note"]
+    assert "22:30" in f["note"] and f["schedulable"] is True
 
 
 def test_green_and_fresh_suggests_hard_session_but_not_too_late():
@@ -78,6 +79,15 @@ def test_same_focus_three_days_running_needs_stronger_evidence():
     assert again["focus"] == "none"
     once = choose_focus(summary(signals=sig), EMPTY, TODAY, recent_focuses=["lower_intensity", "none"])
     assert once["focus"] == "lower_intensity"
+
+
+def test_marked_not_useful_needs_stronger_evidence_but_silence_does_not():
+    sig = {"load": dict(ratio=1.45, consecutive_hard_days=0, level="high")}  # moderate evidence
+    muted = choose_focus(summary(signals=sig), EMPTY, TODAY, not_useful={"lower_intensity"})
+    assert muted["focus"] == "none"
+    strong = {"load": dict(ratio=1.6, consecutive_hard_days=3, level="very_high")}
+    assert choose_focus(summary(signals=strong), EMPTY, TODAY, not_useful={"lower_intensity"})["focus"] \
+        == "lower_intensity"
 
 
 def test_busy_day_while_strained_suggests_a_break():

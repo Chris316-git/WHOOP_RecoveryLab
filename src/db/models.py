@@ -173,6 +173,7 @@ class UserSettings(Base):
     wait_for_sleep: Mapped[bool | None] = mapped_column(Boolean)  # wait until last night is scored
     report_enabled: Mapped[bool | None] = mapped_column(Boolean)
     timezone: Mapped[str | None] = mapped_column(String(64))      # IANA name; None = follow the calendar
+    rl_calendar_id: Mapped[str | None] = mapped_column(String(255))  # the app's own Google calendar
     last_report_on: Mapped[date | None] = mapped_column(Date)     # local date of the last sent report
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -182,17 +183,40 @@ class UserSettings(Base):
 # ---------------- Planner ----------------
 
 class DailyPlan(Base):
-    """The focus chosen for a day (Phase 2). Kept so the feedback loop can learn from it."""
+    """The focus chosen for a day and what came of it. Three things are kept apart, because
+    the experiment engine needs to tell them apart:
+
+    * the recommendation (focus, reasons, suggested block),
+    * the user's response: None means no response at all, which is NOT a rejection;
+      "added" (put it on the calendar), "dismissed", or "not_useful" (dismissed and said
+      the suggestion itself was off),
+    * the calendar state (None | "scheduled" | "removed") and, separately, the outcome
+      measured from wearable data the next morning (src/feedback/outcome.py). Scheduling
+      something is not the same as doing it.
+    """
     __tablename__ = "daily_plans"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
     day: Mapped[date] = mapped_column(Date, primary_key=True)      # local date of the plan
+    timezone: Mapped[str | None] = mapped_column(String(64))
+    # recommendation
     focus: Mapped[str] = mapped_column(String(32))                 # e.g. lower_intensity, none
     score: Mapped[float] = mapped_column(Float)
     reasons: Mapped[list] = mapped_column(JSONB, default=list)
-    block: Mapped[dict | None] = mapped_column(JSONB)           # proposed time block, if any
+    block: Mapped[dict | None] = mapped_column(JSONB)              # suggested time block, if any
     considered: Mapped[list] = mapped_column(JSONB, default=list)  # every candidate and its score
-    status: Mapped[str] = mapped_column(String(16), default="proposed")  # proposed|accepted|adjusted|declined
+    # response
+    response: Mapped[str | None] = mapped_column(String(16))       # None | added | dismissed | not_useful
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # calendar
+    calendar_status: Mapped[str | None] = mapped_column(String(16))  # None | scheduled | removed
+    final_block: Mapped[dict | None] = mapped_column(JSONB)        # the block actually put on the calendar
+    calendar_id: Mapped[str | None] = mapped_column(String(255))
+    event_id: Mapped[str | None] = mapped_column(String(255))      # Google event on the app's calendar
+    # outcome, measured the next morning
+    outcome: Mapped[str | None] = mapped_column(String(16))        # done | partly | not_done | no_data | unmeasured
+    outcome_detail: Mapped[dict | None] = mapped_column(JSONB)
+    outcome_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

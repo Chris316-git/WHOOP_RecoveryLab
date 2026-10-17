@@ -35,7 +35,11 @@ GOOGLE_CLIENT_SECRET_FILE = PROJECT_ROOT / os.getenv(
     "GOOGLE_CLIENT_SECRET_FILE", "secrets/google_client_secret.json"
 )
 GOOGLE_CALENDAR_IDS = [c.strip() for c in os.getenv("GOOGLE_CALENDAR_IDS", "primary").split(",") if c.strip()]
-GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+# Narrow write access: only calendars the app creates (our "Recovery Lab" calendar) and their
+# events. The app can never change the user's own events.
+GOOGLE_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.app.created"
+GOOGLE_SCOPES = [GOOGLE_READ_SCOPE, GOOGLE_WRITE_SCOPE]
 
 # Where OAuth credentials live: "file" (.tokens/, local development) or "db" (encrypted in
 # the oauth_tokens table; required for the scheduled cloud job). Use ONE store everywhere:

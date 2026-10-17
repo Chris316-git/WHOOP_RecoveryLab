@@ -40,8 +40,9 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Per-user send time and time zone
 - [x] Personal trends: HRV and resting heart rate vs. your normal range, sleep shortfall, training load, weekday patterns
 - [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time
-- [ ] Accept / adjust / decline links; confirmed blocks go to a dedicated "Recovery Lab" calendar
-- [ ] Feedback loop: did the advice happen, and did it help?
+- [x] Optional one-tap "Add to calendar" (with Undo) for focuses that need a time block, on a dedicated "Recovery Lab" calendar
+- [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
+- [ ] Feedback loop, the rest: did it help, over many days?
 - [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
 - [ ] Adaptive personalization: structured AI memory computed in code
 - [ ] Hosted multi-user web app
@@ -104,6 +105,39 @@ The job logs never print health or calendar values, because logs of a public rep
 GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it
 from the Actions tab if that happens.
 
+## Add to calendar (optional)
+
+The email is meant to be read in 15 seconds and then closed; ignoring it is a fine response.
+Only when today's focus actually needs a time block (a wind-down before bed, a break in a busy
+day, a hard session) does it carry two buttons: **Add to calendar** puts the block on a
+calendar the app creates for you ("Recovery Lab", with a 15-minute reminder) in one tap, and
+**Change time** offers other free slots today. A quiet **Dismiss** link sits next to them, with
+no questions asked. Every result page has **Undo**. Advice that is not about time, such as
+"take it easy today", has no buttons, only a small "Not useful?" link.
+
+Three things are stored separately in `daily_plans`, because they mean different things:
+whether you responded (no response is *not* a rejection), whether something is on the
+calendar, and what actually happened. The last one is read from your wearable the next
+morning (strain for "take it easy" or "hard session", bedtime for "protect your sleep") and
+shown as one line in the email, so there is nothing to check in. A focus you mark "not
+useful" needs stronger evidence to come back for two weeks.
+
+The buttons need a small public endpoint (the FastAPI app):
+
+1. `make connect-google` once more, to grant the narrow `calendar.app.created` permission
+   (it only covers calendars the app creates).
+2. `make gen-key` and save the output as `ACTION_SIGNING_KEY` (a different value from
+   `TOKEN_ENCRYPTION_KEY`).
+3. Deploy: on Render, New > Blueprint > this repository (`render.yaml`). Fill in
+   `DATABASE_URL`, `TOKEN_ENCRYPTION_KEY` and `ACTION_SIGNING_KEY`.
+4. Add the service URL as `PUBLIC_BASE_URL`, and `ACTION_SIGNING_KEY`, to `.env` and to the
+   GitHub Actions secrets.
+
+Links are signed and expire at 06:00 the next morning. Mail scanners open links in emails on
+their own, so opening a link never changes anything by itself: the page sends the action with
+a line of JavaScript (which most scanners do not run) and shows a plain button otherwise.
+Without `PUBLIC_BASE_URL`, emails are sent without buttons.
+
 ## Project layout
 
 ```
@@ -114,11 +148,13 @@ src/
   analysis/    DailyRecord contract and the daily panel (day alignment of sleep, readiness, load, calendar)
   report/      Trend signals, daily summary and email rendering (pure logic)
   planner/     Today's focus: scoring, threshold, time slot (pure logic)
-  pipeline/    The daily pipeline as injectable stages: sync -> build -> deliver -> record
+  feedback/    Did yesterday's focus happen? Checked from wearable data (pure logic)
+  pipeline/    The daily pipeline as injectable stages: sync -> build -> record -> deliver
   db/          SQLAlchemy models, session factories, upsert, encrypted credentials
   notify/      Email delivery
   settings.py  Runtime settings as one immutable object (from .env / environment)
-  api/         FastAPI app (login flow)
+  actions/     Add to calendar / Change time / Dismiss / Undo: signed links, calendar writes, pages
+  api/         FastAPI app: WHOOP login flow and the action endpoint
 scripts/       Thin command-line entry points (daily.py runs the pipeline)
 .github/       GitHub Actions workflow for the daily job
 tests/         Unit tests for the pure logic, plus an end-to-end pipeline test on in-memory SQLite

@@ -9,6 +9,16 @@ built to answer three questions:
 2. **Why should I do it?** Reasons computed from your own data, compared with your own baseline.
 3. **Did it actually help?** Feedback every day, and proper experiments when you want certainty.
 
+**It analyzes every day and steps in only when it matters.** It is not a planner that fills
+your day with tasks to accept. Two modes:
+
+- **Daily Brief (passive, the core).** Every morning, analysis is done and sent. Most days you
+  just read it in about 15 seconds and close it; that is a complete, valid response. When the
+  one focus needs a time block, a single optional tap puts it on your calendar.
+- **Assistant (active, later).** When *you* want to plan training, rework a week, dig into
+  sleep or start a habit experiment, you ask, and the assistant calls the same tools
+  (signals, planner, calendar, experiments). See "Later".
+
 > Working name: Recovery Lab. A rename is under consideration (e.g. "PulsePilot"). Before
 > renaming, check that the name is free (other products, trademarks, domains, GitHub), and
 > drop "WHOOP" from the repository name so the product does not use a third-party brand.
@@ -22,8 +32,8 @@ says the ability to write events will come "in the future"
 checked October 2026). Other user requests there ask for an adaptive training calendar.
 **"From advice to a confirmed time block that adapts to the day"** is a concrete angle
 worth exploring, but the space is not empty, and competitors may ship calendar writing at
-any time. What is harder to copy is the combination: one well-chosen focus, a confirmation
-step, a feedback loop, and personalization grounded in experiments.
+any time. What is harder to copy is the combination: one well-chosen focus, an optional
+one-tap calendar step, a feedback loop read from data, and personalization grounded in experiments.
 
 **Experiments.** Many apps surface correlations. The difference here is the whole
 lifecycle: a pre-registered design, a length set by the user's own data, guided execution,
@@ -41,8 +51,11 @@ Re-check competitors before making public claims.
   scores, intervals and memory facts. The LLM chooses wording, explains, and drafts
   experiment plans. Code validates structured output, and every number in generated text
   must appear in the input.
-- **The user stays in control.** Nothing lands on the calendar without confirmation, and
-  every proposal can be accepted, adjusted or declined.
+- **Low effort, user in control.** Reading is enough; acting is optional. The calendar is a
+  tool, not the core: only advice that needs a time block offers it, it takes one tap, and
+  every action can be undone. Nothing lands on the calendar unless the user taps.
+- **No response is not a rejection.** Suggested, scheduled and done are separate states, and
+  "did it happen" is read from wearable data wherever possible instead of asking.
 - **Correlation is labeled as correlation.** Only completed experiments produce causal claims.
 - **Privacy first.** Minimal data, encrypted credentials, calendar time blocks only, no
   health values in logs, and only aggregates sent to the LLM.
@@ -58,6 +71,9 @@ Re-check competitors before making public claims.
 - Personal trends in the email: HRV and resting heart rate vs. your normal range, 7-night sleep
   shortfall, training load ratio and hard-day streaks, weekday sleep patterns
 - OAuth tokens encrypted in the database; privacy policy
+- Daily planner: one focus a day with confidence, counter-evidence and "why not"
+- Optional one-tap "Add to calendar" / "Change time" / "Dismiss", with Undo, on a dedicated calendar
+- Yesterday's focus checked from wearable data and shown as one line (Phase 3, first part)
 - Work in progress (not merged): experiment tables, ABAB design, Bayesian AR(1) engine,
   synthetic data generator. The intervals still need calibration: 90% credible intervals
   currently cover about 80-88% in simulation.
@@ -80,11 +96,15 @@ Goal: each morning, an accurate picture of where you stand relative to *your own
 
 ## Phase 2: Daily planner, with one focus a day
 
-Goal: one recommendation a day that fits your body and your calendar, which you can accept,
-adjust or decline.
+Goal: one recommendation a day that fits your body and your calendar. Reading it is enough;
+scheduling it is optional.
 
-**Status:** steps 1, 2 and the "Today's focus" email card are done (`src/planner/focus.py`,
-plans saved to `daily_plans`). Next: step 3 (accept / adjust / decline), then step 4.
+**Status:** steps 1-3 are done: focus selection with confidence, counter-evidence and "why
+not"; slot finding; the email card; optional one-tap calendar actions with Undo
+(`src/actions/`). Simplified after the first version: no "Accept" (accept what, the analysis
+or a promise?), no confirmation step, no reasons asked on skip, and no buttons at all for
+advice that is not about time. Still open from step 3: moving a scheduled block
+automatically when a new meeting conflicts. Next: step 4 (LLM wording).
 
 **1. Choose today's focus (deterministic).** Code builds candidate focuses and scores each one
 by *how far today deviates from your baseline × whether you can act on it today*:
@@ -116,14 +136,18 @@ nothing fits, offer a shorter version or suggest tomorrow. "Prioritize sleep" be
 wind-down block that starts 45-60 minutes before the target bedtime (target wake time minus
 sleep need).
 
-**3. Accept / adjust / decline.**
-- The email carries **signed, single-use, expiring links** (an HMAC token over user,
-  proposal, action and expiry). A small hosted endpoint receives the click. "Adjust" opens a
-  minimal page to change the time or duration. This endpoint is the first piece of the
-  hosted version; a full dashboard comes much later.
-- On accept, the event is created in a dedicated **"Recovery Lab"** calendar using the
-  narrow `calendar.app.created` scope (the app can only touch events on its own calendar).
-  Check Google's current documentation first; users re-consent once; update PRIVACY.md.
+**3. Optional calendar actions.**
+- Only focuses that need a time block (wind-down, a break in a busy day, a hard session)
+  get **Add to calendar** and **Change time**, plus a quiet **Dismiss**. "Take it easy" gets
+  no buttons, only a small "Not useful?".
+- Links are **signed and expiring** (an HMAC token over user, day, action and expiry). Mail
+  scanners open links on their own, so a GET never acts by itself: the page submits the
+  action with a line of JavaScript (most scanners do not run it) and falls back to a button.
+  Every result offers **Undo**. Dismiss asks nothing; "the suggestion itself wasn't useful"
+  is an optional extra tap.
+- Events go to a dedicated **"Recovery Lab"** calendar using the narrow
+  `calendar.app.created` scope (the app can only touch events on its own calendar). A
+  wind-down is marked "free" so it reminds without blocking the evening.
 - Fallback with no server: an `.ics` "add to calendar" attachment (the user's click adds it;
   the app cannot move it later).
 - After confirmation, the block is moved or shortened if a new meeting conflicts or
@@ -136,23 +160,36 @@ hard day, so today should be light. You are free at 17:30. Shall I add a 30-minu
 session?"). Guardrails: the numeric consistency check, structured input only, and a
 template fallback when the API fails, so the email always goes out.
 
-**Data:** `daily_plans` (the date, the chosen focus, its score and reasons, the proposed
-block and its status) and the Google event ID.
+**Data:** `daily_plans` keeps three things apart: the recommendation (focus, score, reasons,
+suggested block), the response (`None` = no response, `added`, `dismissed`, `not_useful`)
+and the calendar state (`scheduled`, `removed`, the event ID). The outcome is a fourth,
+separate field filled in the next morning (Phase 3).
 
 ## Phase 3: Feedback loop
 
-Goal: know, every day, whether recommendations are followed and whether they help.
+Goal: know, every day, whether recommendations are followed and whether they help, without
+turning the product into a check-in app.
 
-- **Log every decision:** accepted, adjusted (and how), declined, or ignored.
-- **Did it happen?** Training is checked against WHOOP workouts near the planned time; a
-  wind-down is checked against the actual bedtime vs. the target.
-- **Did it help?** A one-tap "was today's advice helpful?" in the next morning's email.
-  Asked only on days with a confirmed recommendation, to avoid notification fatigue.
+**Status:** the first part is done (`src/feedback/outcome.py`): responses are logged, and
+the next morning the email shows one line on yesterday's focus, measured from data.
+
+- **Log every response:** added (and the time), dismissed, not useful, or no response.
+  Silence is never counted as a rejection.
+- **Did it happen? (done)** Read from data, not asked: "take it easy" and "hard session"
+  from that day's strain, "protect your sleep" from the actual bedtime vs. the target.
+  "Build breaks" cannot be seen in the data and is reported only when it was scheduled.
+  No evening check-in email: one more message is one more interruption.
+- **Learning from responses (started):** a focus marked "not useful" needs stronger
+  evidence for two weeks. Later: lower the weight of a suggestion type the user repeatedly
+  dismisses, and adjust slot times from where blocks were moved.
+- **Did it help?** Possibly a one-tap "helpful?" on days something was scheduled, only if
+  the data-based line proves not to be enough.
 - **Outcome tracking:** next-day readiness after followed vs. not-followed recommendations.
   This is reported descriptively, as an association; Phase 4 provides the causal evidence.
 - The same one-tap mechanism later serves experiment check-ins.
 
-**Data:** `recommendation_feedback` (plan, action, adjustment, helpful, completion source).
+**Data:** `daily_plans.outcome` (done, partly, not done, no data, unmeasured) with the few
+numbers behind it in `outcome_detail`.
 
 ## Phase 4: Personal experiment engine
 
@@ -217,7 +254,7 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
   - the strength: an experiment result is causal; patterns and feedback are labeled as correlations or preferences;
   - when it was last updated, and when it should be re-checked.
 - **Examples:**
-  - "Prefers training in the afternoon" (from accepted and declined proposals).
+  - "Prefers training in the afternoon" (from blocks added, moved and dismissed).
   - "Declined 7am workouts three times" (so stop proposing them).
   - "Last caffeine experiment: insufficient data" (so suggest repeating it with a better design).
   - "Evening hard training lowers your next-day HRV" (conclusive experiment, so it shapes scheduling).
@@ -227,6 +264,10 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 - Users can see and delete their insights (and PRIVACY.md describes them).
 
 ## Later (not now)
+
+- **Assistant mode:** expose the existing pipeline as tools (today's signals, the planner,
+  free time, add or move a calendar block, experiment status), e.g. as an MCP server, so the
+  user can ask an assistant when they want to plan, instead of us building a chat UI.
 
 - Full web dashboard (history, experiments, insights); Telegram as a second channel.
 - Hosted multi-user version: web OAuth, a settings page, per-user email via a transactional
@@ -241,9 +282,10 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 ## Order of work
 
 1. ~~**Phase 1 additions:** trends, load, weekday patterns.~~ Done.
-2. **Phase 2:** ~~focus selection and threshold, slot finding, the "Today's focus" email~~ (done);
-   next: signed action links with a minimal endpoint, the dedicated calendar, and finally the LLM wording.
-3. **Phase 3:** decision log, completion checks, "was it helpful?".
+2. **Phase 2:** ~~focus selection, slot finding, the email card, optional calendar actions~~
+   (done); next: the LLM wording.
+3. **Phase 3:** ~~response log, completion checks from data~~ (done); next: learn from
+   repeated dismissals and moved blocks; "did it help" over many days, labeled as association.
 4. **Phase 4:** calibrate and merge the engine; presets; pre-registration; data-driven
    length; report card; follow-up.
 5. **Phase 5:** the insights table, then preferences from feedback, then the LLM digest.

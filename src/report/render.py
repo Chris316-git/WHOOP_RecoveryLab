@@ -84,9 +84,28 @@ def subject(summary: dict) -> str:
     return f"{head} · Recovery {rec:g}% ({summary['recovery_zone']}){tail}"
 
 
+YESTERDAY_LABEL = {"lower_intensity": "Take it easy", "prioritize_sleep": "Earlier night",
+                   "recover_between": "Breaks in a busy day", "go_hard": "Hard session"}
+OUTCOME_MARK = {"done": "&#10003;", "partly": "&#9680;", "not_done": "&#9675;", "no_data": "&#8211;",
+                "unmeasured": "&#8211;"}
+
+
+def yesterday_text(summary: dict) -> str | None:
+    """One line on yesterday's focus, measured from the data. Facts side by side, no causal claim."""
+    y = summary.get("yesterday")
+    if not y:
+        return None
+    line = f"{YESTERDAY_LABEL.get(y['focus'], y['title'])}: {y['text']}."
+    if y.get("recovery_before") is not None and y.get("recovery_after") is not None:
+        line += f" Recovery {y['recovery_before']}% then, {y['recovery_after']}% today."
+    return line
+
+
 def render_text(summary: dict, notices: list[str]) -> str:
     lines = [subject(summary), ""]
     lines += [f"! {n}" for n in notices]
+    if yesterday_text(summary):
+        lines += [f"YESTERDAY  {yesterday_text(summary)}", ""]
     f = summary.get("focus")
     if f:
         conf = f" ({f['confidence']} confidence)" if f.get("confidence") else ""
@@ -98,6 +117,9 @@ def render_text(summary: dict, notices: list[str]) -> str:
         if f.get("block"):
             b = f["block"]
             lines.append(f"  Suggested: {b['start']}-{b['end']}  {b['title']}")
+        acts = summary.get("actions") or {}
+        if acts:
+            lines += [f"  {label}: {acts[k]}" for k, label in ACTION_LABELS if acts.get(k)]
         lines += [f"  {a}" for a in f.get("alternatives", [])]
         if f.get("note"):
             lines.append(f"  {f['note']}")
@@ -355,6 +377,7 @@ def _focus(summary: dict) -> str:
                       f'<span style="font-size:15px;font-weight:600;color:{INK}">{b["start"]}-{b["end"]}</span>'
                       f'<span style="color:{MUTED}"> &nbsp;&middot;&nbsp; </span>'
                       f'<span style="font-size:14px;color:{INK_2}">{escape(b["title"])}</span></td></tr></table>')
+    actions_html = _action_buttons(summary.get("actions"))
     small = [x for x in [*f.get("alternatives", []), f.get("note"), f.get("caveat")] if x]
     small_html = "".join(f'<div style="font-size:13px;color:{MUTED};margin-top:8px;line-height:1.45">'
                          f'{escape(x)}</div>' for x in small)
@@ -365,8 +388,53 @@ def _focus(summary: dict) -> str:
             f'<td style="width:4px;background:{accent};border-radius:4px"></td><td style="padding-left:16px">'
             f'{focus_title}'
             f'<div style="font-size:22px;font-weight:600;color:{INK};line-height:1.25">{escape(f["title"])}{chip}</div>'
-            f'{headline}{why}{other}{block_html}{small_html}</td></tr></table>')
+            f'{headline}{why}{other}{block_html}{actions_html}{small_html}</td></tr></table>')
     return _card(body)
+
+
+ACTION_LABELS = (("add", "Add to calendar"), ("change", "Change time"), ("dismiss", "Dismiss"),
+                 ("not_useful", "Not useful?"))
+
+
+def _action_buttons(actions: dict | None) -> str:
+    """Optional actions. Ignoring the email is a perfectly fine response, so the buttons stay
+    small: Add to calendar and Change time, then a quiet text link (Dismiss or Not useful?)."""
+    if not actions:
+        return ""
+    buttons = [(k, label, bg, fg, border) for (k, label), (bg, fg, border) in
+               zip(ACTION_LABELS[:2], ((INK, "#ffffff", INK), (CARD, INK, LINE))) if actions.get(k)]
+    cells = "".join(
+        f'<td style="padding:0 8px 0 0"><a href="{escape(actions[key])}" style="display:inline-block;'
+        f'background:{bg};color:{fg};border:1px solid {border};border-radius:10px;padding:9px 16px;'
+        f'font-size:14px;font-weight:600;text-decoration:none">{label}</a></td>'
+        for key, label, bg, fg, border in buttons)
+    quiet = [(k, label) for k, label in ACTION_LABELS[2:] if actions.get(k)]
+    quiet_html = " &nbsp;&middot;&nbsp; ".join(
+        f'<a href="{escape(actions[k])}" style="color:{MUTED};text-decoration:underline">{label}</a>'
+        for k, label in quiet)
+    html = ""
+    if cells:
+        html += (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>{cells}'
+                 f'</tr></table>')
+    note = "Adds it to your Recovery Lab calendar with a reminder; you can undo it." if cells else ""
+    line = " &nbsp;&middot;&nbsp; ".join(x for x in (note, quiet_html) if x)
+    if line:
+        html += f'<div style="font-size:12px;color:{MUTED};margin-top:8px">{line}</div>'
+    return html
+
+
+def _yesterday(summary: dict) -> str:
+    y = summary.get("yesterday")
+    text = yesterday_text(summary)
+    if not y or not text:
+        return ""
+    mark = OUTCOME_MARK.get(y["outcome"], "&#8211;")
+    color = GOOD if y["outcome"] == "done" else MUTED
+    return _card(f'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+                 f'<td style="vertical-align:top;padding-right:10px;color:{color};font-size:16px">{mark}</td>'
+                 f'<td style="font-size:14px;color:{INK_2};line-height:1.45">'
+                 f'<span style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:{MUTED};'
+                 f'font-weight:600">Yesterday</span>&nbsp; {escape(text)}</td></tr></table>', pad="14px 18px")
 
 
 def render_html(summary: dict, notices: list[str]) -> str:
@@ -380,9 +448,9 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'{escape(summary["weekday"])}, {escape(summary["date"])}</td></tr></table></td></tr>')
     footer = (f'<tr><td style="padding:8px 4px 0;font-size:12px;color:{MUTED};line-height:1.5">'
               f'Compared with your own recent history. The focus is chosen by transparent rules, not '
-              f'experiment results. Not medical advice. '
+              f'experiment results; a single day cannot show what caused what. Not medical advice. '
               f'Change the delivery time with <code>make settings</code>.</td></tr>')
-    content = (header + notice_html + _hero(summary) + _focus(summary) + _metrics(summary)
+    content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _metrics(summary)
                + _trends(summary) + _today(summary) + footer)
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'

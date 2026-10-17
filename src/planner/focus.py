@@ -31,6 +31,10 @@ EARLIEST_TARGET_BEDTIME = 21 * 60 + 30
 WIND_DOWN_MIN = 45
 BEDTIME_HISTORY_DAYS = 14
 
+# Focuses where a time block on the calendar actually helps. "Take it easy" is advice about
+# how hard to go, not something to schedule, so it gets no calendar button.
+SCHEDULABLE = {"prioritize_sleep", "recover_between", "go_hard"}
+
 TITLES = {
     "lower_intensity": "Take it easy today",
     "prioritize_sleep": "Protect your sleep tonight",
@@ -305,15 +309,19 @@ def alternatives(focus: str, considered: list, summary: dict, sig: dict) -> list
 REPEAT_DAMPING = 0.6      # same focus already chosen on each of the last REPEAT_DAYS days ...
 REPEAT_DAYS = 2
 REPEAT_OVERRIDE = 0.75    # ... unless the evidence is this strong
+NOT_USEFUL_DAMPING = 0.6  # the user said this kind of suggestion was not useful (recently)
 
 
 def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime | None = None,
-                 recent_focuses: list[str] | None = None) -> dict:
+                 recent_focuses: list[str] | None = None, not_useful: set[str] | None = None) -> dict:
     """The day's focus as a plain dict (stored, rendered and later sent to the LLM).
 
     `recent_focuses` are the focuses chosen on previous days, most recent first. Repeating the
     same advice day after day is how people learn to ignore it, so a focus that was already
     chosen on each of the last two days needs stronger evidence to be chosen again.
+
+    `not_useful` are focuses the user explicitly marked "not useful" recently; they also need
+    stronger evidence. Not responding is never treated as a rejection.
     """
     sig = summary.get("signals") or {}
     free = (summary.get("calendar") or {}).get("free_windows") or []
@@ -323,7 +331,8 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
     if not summary.get("last_night_scored"):
         return dict(focus="none", title="Waiting for last night's data", score=0.0, confidence=None,
                     headline="Your plan will be based on today's recovery once WHOOP has scored it.",
-                    reasons=[], counter=[], alternatives=[], caveat=None, block=None, note=None, considered=[])
+                    reasons=[], counter=[], alternatives=[], caveat=None, block=None, note=None, considered=[],
+                    schedulable=False)
 
     candidates = [
         _lower_intensity(summary, sig, free, bedtime),
@@ -335,6 +344,8 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
     for c in candidates:
         if len(recent) == REPEAT_DAYS and all(r == c.key for r in recent) and c.evidence < REPEAT_OVERRIDE:
             c.actionability *= REPEAT_DAMPING
+        if c.key in (not_useful or set()) and c.evidence < REPEAT_OVERRIDE:
+            c.actionability *= NOT_USEFUL_DAMPING
     considered = sorted(((c.key, c.score) for c in candidates), key=lambda kv: (-kv[1], PRIORITY.index(kv[0])))
     best_key, best_score = considered[0]
     if best_score < THRESHOLD:
@@ -343,7 +354,8 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
         return dict(focus="none", title=TITLES["none"], score=best_score, block=None, confidence=None,
                     headline="Keep your normal plan.",
                     reasons=["your recovery, sleep and training load are within your usual range"],
-                    counter=[], alternatives=hints, caveat=None, note=None, considered=considered)
+                    counter=[], alternatives=hints, caveat=None, note=None, considered=considered,
+                    schedulable=False)
     best = next(c for c in candidates if c.key == best_key)
     reasons = [r for _, r in sorted(best.triggers, key=lambda t: -t[0])]
     level = confidence(best_score)
@@ -351,4 +363,5 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
                 headline=HEADLINES[best.key][level], reasons=reasons,
                 counter=counter_evidence(best.key, summary, sig),
                 alternatives=alternatives(best.key, considered, summary, sig),
-                caveat=CAVEAT, block=best.block, note=best.note, considered=considered)
+                caveat=CAVEAT, block=best.block, note=best.note, considered=considered,
+                schedulable=best.key in SCHEDULABLE and best.block is not None)

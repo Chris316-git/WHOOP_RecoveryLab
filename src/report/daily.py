@@ -138,7 +138,7 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
 
 def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
                         events_today: list[dict] | None = None, now: datetime | None = None,
-                        recent_focuses: list[str] | None = None) -> dict:
+                        recent_focuses: list[str] | None = None, not_useful: set[str] | None = None) -> dict:
     """Summary for the morning of `today`: last night's sleep and recovery vs. your own
     30-day baseline, the last 7 days vs. that baseline, and today's calendar."""
     last_night = today - timedelta(days=1)  # behavior day whose sleep ended this morning
@@ -173,5 +173,5 @@ def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
         calendar=calendar_summary(events_today, today, tz, now) if events_today is not None else None,
         signals=compute_signals(panel, today),
     )
-    summary["focus"] = choose_focus(summary, panel, today, now, recent_focuses)
+    summary["focus"] = choose_focus(summary, panel, today, now, recent_focuses, not_useful)
     return summary

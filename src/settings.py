@@ -32,6 +32,12 @@ class Settings:
     report_email_to: str = ""
     google_calendar_ids: tuple[str, ...] = ("primary",)
     smtp: SmtpSettings = field(default_factory=SmtpSettings)
+    public_base_url: str = ""                 # where the action endpoint is hosted, e.g. https://x.onrender.com
+    action_signing_key: str = ""              # secret for signing the links in the email
+
+    @property
+    def actions_enabled(self) -> bool:
+        return bool(self.public_base_url and self.action_signing_key)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -46,6 +52,8 @@ class Settings:
             google_calendar_ids=tuple(c.strip() for c in get("GOOGLE_CALENDAR_IDS", "primary").split(",") if c.strip()),
             smtp=SmtpSettings(host=get("SMTP_HOST", "smtp.gmail.com"), port=int(get("SMTP_PORT", "465")),
                               user=get("SMTP_USER"), password=get("SMTP_PASSWORD")),
+            public_base_url=get("PUBLIC_BASE_URL").rstrip("/"),
+            action_signing_key=get("ACTION_SIGNING_KEY"),
         )
 
     def require(self, name: str) -> str:

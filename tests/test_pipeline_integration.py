@@ -107,3 +107,19 @@ def test_scheduled_run_respects_time_and_sends_once(factory):
     first = make_pipeline(factory, outbox, hour=11).run_user(str(USER))
     again = make_pipeline(factory, outbox, hour=12).run_user(str(USER))
     assert first.outcome == "sent" and again.outcome == "skipped" and len(outbox) == 1
+
+
+def test_yesterdays_focus_is_checked_from_data_and_stored(factory):
+    with factory() as s:
+        s.add(DailyPlan(user_id=USER, day=TODAY - timedelta(days=1), focus="prioritize_sleep", score=0.7,
+                        reasons=[], considered=[], block=dict(start="21:45", end="22:30", minutes=45,
+                                                              title="Wind down")))
+        s.commit()
+    outbox = []
+    make_pipeline(factory, outbox).run_user(str(USER), mode="now")
+    _, _, html, text = outbox[0]
+    assert "YESTERDAY" in text and "Earlier night: in bed at 23:00" in text and "Yesterday" in html
+    with factory() as s:
+        y = s.get(DailyPlan, (USER, TODAY - timedelta(days=1)))
+        assert y.outcome == "partly" and y.outcome_detail["minutes_late"] == 30
+        assert y.response is None                         # no click is not a rejection

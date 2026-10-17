@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Recovery Lab** · Effective date: October 15, 2026
+**Recovery Lab** · Effective date: October 16, 2026
 
 Recovery Lab is an open-source tool that analyzes your own wearable and calendar data to
 run personal (N-of-1) experiments and send you a daily summary. This policy explains what
@@ -36,9 +36,27 @@ Recovery Lab stores **time blocks only**:
 - daily schedule features derived from these blocks, such as busy minutes, meeting
   minutes and the longest free block.
 
+If you choose to, Recovery Lab also **writes** to Google Calendar, but only to a calendar it
+creates for you, called "Recovery Lab". It uses the narrow `calendar.app.created` permission,
+which only covers calendars the app created and their events. Events appear there only after
+you tap "Add to calendar", and Undo removes them. You can hide or delete that calendar at any time.
+
 Recovery Lab **does not store** event titles, descriptions, locations, attachments,
 conference links, or the names or email addresses of attendees. Calendar IDs, which can
 contain an email address, are stored only as a one-way hash.
+
+### Your responses to suggestions, and what happened
+
+If you use the links in the daily email, Recovery Lab stores your response (added to the
+calendar, dismissed, or marked "not useful"), the time block you chose, and the ID of the
+event it created. Not responding is recorded as no response. No reasons are asked for.
+
+The next morning, Recovery Lab compares the previous day's suggestion with data it already has
+(for example, that day's strain or the time you went to bed) and stores the result (done,
+partly, not done) with those few numbers. Nothing new is collected for this.
+
+These records are used only to make future suggestions fit you better. The links in the email
+are signed and expire, and they contain no health data.
 
 ### Information you enter (planned)
 
@@ -86,6 +104,7 @@ Recovery Lab sends data only to the services needed to run it:
 | Database host (e.g. Supabase) | Storage | Everything described above |
 | GitHub Actions | Run the daily job | Encrypted credentials and database connection (as secrets) |
 | Email provider (e.g. Gmail) | Deliver the daily summary | The contents of the summary |
+| Web host (e.g. Render) | Run the endpoint behind the email links | Database connection and keys (as secrets); your clicks |
 
 **Language model (planned):** a later version will use the Anthropic API to word
 experiment designs and explanations. Only aggregated statistics computed by Recovery Lab
@@ -114,7 +133,7 @@ Once access is revoked, the stored tokens stop working, even if they have not be
 ## Security
 
 Credentials are encrypted at rest, secrets are kept out of the code repository, database
-connections use TLS, and only read-only permissions are requested from WHOOP and Google.
+connections use TLS, and only read-only permissions are requested from WHOOP, and Google write access is limited to the app's own calendar.
 No system is perfectly secure. If you find a vulnerability, please report it privately
 (see Contact).
 

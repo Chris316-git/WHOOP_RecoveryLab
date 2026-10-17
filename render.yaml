@@ -1,0 +1,24 @@
+# Render blueprint for the action endpoint (Accept / Adjust / Skip links in the daily email).
+# In Render: New > Blueprint > connect this repository, then fill in the secret values.
+# The free plan sleeps when idle, so the first click after a while can take ~30-60 seconds.
+services:
+  - type: web
+    name: recovery-lab
+    runtime: python
+    plan: free
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: .venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TOKEN_STORE
+        value: db
+      - key: REPORT_TIMEZONE
+        value: America/Los_Angeles
+      - key: DATABASE_URL
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: ACTION_SIGNING_KEY
+        sync: false

@@ -61,3 +61,21 @@ def load_recent_focuses(session: Session, user_id: int, today: date, days: int =
             break
         out.append(rows[d])
     return out
+
+
+NOT_USEFUL_DAYS = 14
+
+
+def load_not_useful(session: Session, user_id: int, today: date, days: int = NOT_USEFUL_DAYS) -> set[str]:
+    """Focuses the user marked "not useful" in the last `days` days."""
+    return set(session.scalars(select(DailyPlan.focus).where(
+        DailyPlan.user_id == user_id, DailyPlan.day >= today - timedelta(days=days), DailyPlan.day < today,
+        DailyPlan.response == "not_useful")))
+
+
+def load_plan(session: Session, user_id: int, day: date) -> dict | None:
+    p = session.get(DailyPlan, (user_id, day))
+    if p is None:
+        return None
+    return dict(focus=p.focus, block=p.block, final_block=p.final_block, response=p.response,
+                calendar_status=p.calendar_status, outcome=p.outcome)

@@ -1,6 +1,6 @@
 """The daily pipeline as separate, injectable stages.
 
-    due?  ->  sync sources  ->  build report  ->  ready?  ->  deliver  ->  record plan
+    due?  ->  sync sources  ->  build report (+ check yesterday)  ->  ready?  ->  record  ->  deliver
 
 Every dependency (database sessions, settings, token store, mail sender, clock) is passed
 in, so the stages can be reused from a script, a web endpoint, a notebook or a test, and
@@ -10,14 +10,22 @@ results carry statuses only, because the scheduled job's logs are public.
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from src.db.models import DailyPlan, User, UserSettings
 from src.db.upsert import upsert
+from src.feedback.outcome import evaluate
+from src.planner.focus import TITLES
 from src.report.daily import build_daily_summary
-from src.report.data import load_events_for_day, load_recent_focuses, load_recent_panel
+from src.report.data import (
+    load_events_for_day,
+    load_not_useful,
+    load_plan,
+    load_recent_focuses,
+    load_recent_panel,
+)
 from src.report.render import render_email
 from src.report.schedule import (
     ReportSchedule,
@@ -98,12 +106,19 @@ class DailyPipeline:
 
     # ---- stage 2: build ----
     def build_summary(self, user_id: str, tz: str, now: datetime) -> dict:
+        today, uid = now.date(), int(user_id)
         with self.session_factory() as session:
-            panel = load_recent_panel(session, int(user_id), now.date())
-            events = (load_events_for_day(session, int(user_id), now.date(), tz)
-                      if user_id in self.google_users else None)
-            recent = load_recent_focuses(session, int(user_id), now.date())
-        return build_daily_summary(panel, now.date(), tz, events, now=now, recent_focuses=recent)
+            panel = load_recent_panel(session, uid, today)
+            events = load_events_for_day(session, uid, today, tz) if user_id in self.google_users else None
+            recent = load_recent_focuses(session, uid, today)
+            muted = load_not_useful(session, uid, today)
+            yesterday = load_plan(session, uid, today - timedelta(days=1))
+        summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted)
+        # Did yesterday's focus happen? Read from the wearable data, so nobody has to check in.
+        if yesterday is not None:
+            yesterday["title"] = TITLES.get(yesterday["focus"], yesterday["focus"])
+            summary["yesterday"] = evaluate(yesterday, panel, today - timedelta(days=1))
+        return summary
 
     # ---- stage 3: deliver ----
     def deliver(self, summary: dict, notices: list[str]) -> None:
@@ -124,14 +139,55 @@ class DailyPipeline:
         return path
 
     # ---- stage 4: record ----
-    def record(self, user_id: str, summary: dict, now: datetime) -> None:
+    def save_plan(self, user_id: str, summary: dict, now: datetime, tz: str) -> str:
+        """Store today's focus before sending (the email's links point at it). A plan the user
+        already decided on is left alone. Returns the plan's status."""
         f = summary["focus"]
         with self.session_factory() as session:
-            upsert(session, UserSettings, [dict(user_id=int(user_id), last_report_on=now.date())], ["user_id"])
+            existing = session.get(DailyPlan, (int(user_id), now.date()))
+            if existing is not None and (existing.response or existing.calendar_status):
+                return "decided"
             upsert(session, DailyPlan, [dict(
                 user_id=int(user_id), day=now.date(), focus=f["focus"], score=float(f["score"]),
                 reasons=f["reasons"], block=f["block"], considered=[list(c) for c in f["considered"]],
+                timezone=tz,
             )], ["user_id", "day"])
+            session.commit()
+        return "open"
+
+    def save_outcome(self, user_id: str, summary: dict, now: datetime) -> None:
+        """Store what the wearable says about yesterday's focus on yesterday's plan."""
+        review = summary.get("yesterday")
+        if not review:
+            return
+        with self.session_factory() as session:
+            p = session.get(DailyPlan, (int(user_id), now.date() - timedelta(days=1)))
+            if p is None:
+                return
+            p.outcome = review["outcome"]
+            p.outcome_detail = dict(review["detail"], recovery_before=review["recovery_before"],
+                                    recovery_after=review["recovery_after"])
+            p.outcome_checked_at = datetime.now(timezone.utc)
+            session.commit()
+
+    def action_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
+        """Signed links, valid until 06:00 the next morning. Add to calendar / Change time /
+        Dismiss only when a time block actually helps; otherwise just a quiet "Not useful?"."""
+        focus = summary["focus"]
+        if not self.settings.actions_enabled or focus.get("focus") in (None, "none"):
+            return None
+        actions = ("add", "change", "dismiss") if focus.get("schedulable") else ("not_useful",)
+        from datetime import time
+
+        from src.actions.tokens import ActionToken, sign
+        expires = int(datetime.combine(now.date() + timedelta(days=1), time(6), now.tzinfo).timestamp())
+        base, key = self.settings.public_base_url, self.settings.action_signing_key
+        return {a: f"{base}/a/{sign(ActionToken(int(user_id), now.date(), a, expires), key)}"
+                for a in actions}
+
+    def mark_sent(self, user_id: str, now: datetime) -> None:
+        with self.session_factory() as session:
+            upsert(session, UserSettings, [dict(user_id=int(user_id), last_report_on=now.date())], ["user_id"])
             session.commit()
 
     # ---- the whole flow for one user ----
@@ -158,8 +214,12 @@ class DailyPipeline:
             path = self.save_preview(user_id, summary, run.notices)
             run.outcome, run.detail = "previewed", str(path)
             return run
+        status = self.save_plan(user_id, summary, now, tz)
+        self.save_outcome(user_id, summary, now)
+        if status == "open":
+            summary["actions"] = self.action_links(user_id, summary, now)
         self.deliver(summary, run.notices)
-        self.record(user_id, summary, now)
+        self.mark_sent(user_id, now)
         run.outcome = "sent"
         return run
 

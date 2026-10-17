@@ -62,8 +62,15 @@ def load_credentials(user_id: str) -> Credentials:
     data = _load_json(user_id)
     if data is None:
         raise FileNotFoundError(f"No Google credentials for user {user_id}. Run `make connect-google` first.")
-    creds = Credentials.from_authorized_user_info(json.loads(data), config.GOOGLE_SCOPES)
+    # Keep the scopes the user actually granted. Forcing the current scope list here would
+    # break refresh for tokens authorized before the write scope existed.
+    creds = Credentials.from_authorized_user_info(json.loads(data))
     if not creds.valid and creds.refresh_token:
         creds.refresh(Request())
         save_credentials(user_id, creds.to_json())
     return creds
+
+
+def can_write(creds: Credentials) -> bool:
+    """True if the user granted the narrow write scope (re-run `make connect-google` otherwise)."""
+    return config.GOOGLE_WRITE_SCOPE in (creds.scopes or [])

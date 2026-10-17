@@ -70,7 +70,7 @@ def test_weekday_pattern_only_when_reliable():
 
 def test_compute_signals_and_sleep_need_parsing():
     sig = compute_signals(make_panel(), TODAY)
-    assert set(sig) == {"hrv", "resting_hr", "sleep", "load", "weekday"}
+    assert set(sig) == {"hrv_daily", "hrv", "resting_hr", "sleep", "load", "weekday"}
     raw = {"score": {"sleep_needed": {"baseline_milli": 27_000_000, "need_from_sleep_debt_milli": 1_800_000,
                                       "need_from_recent_strain_milli": 600_000,
                                       "need_from_recent_nap_milli": -1_200_000}}}

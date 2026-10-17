@@ -89,13 +89,20 @@ def render_text(summary: dict, notices: list[str]) -> str:
     lines += [f"! {n}" for n in notices]
     f = summary.get("focus")
     if f:
-        lines += [f"TODAY'S FOCUS: {f['title']}"]
+        conf = f" ({f['confidence']} confidence)" if f.get("confidence") else ""
+        lines += [f"TODAY'S FOCUS: {f['title']}{conf}"]
+        if f.get("headline"):
+            lines.append(f"  {f['headline']}")
         lines += [f"  - because {r}" for r in f["reasons"]]
+        lines += [f"  - on the other hand, {r}" for r in f.get("counter", [])]
         if f.get("block"):
             b = f["block"]
             lines.append(f"  Suggested: {b['start']}-{b['end']}  {b['title']}")
+        lines += [f"  {a}" for a in f.get("alternatives", [])]
         if f.get("note"):
             lines.append(f"  {f['note']}")
+        if f.get("caveat"):
+            lines.append(f"  {f['caveat']}")
         lines.append("")
     if not summary["last_night_scored"]:
         lines.append("Last night's sleep is not scored yet (or WHOOP was not worn).")
@@ -207,16 +214,66 @@ def _metrics(summary: dict) -> str:
     return _card(f'{_title("Last night")}{grid}', pad="20px 22px 12px")
 
 
+CHART_H = 56
+
+
+def _hrv_chart(sig: dict) -> str:
+    """14-day HRV bars as an email-safe table (no SVG or JS, which mail clients block).
+    Bars below your normal range are red, above it green, otherwise gray; the caption says
+    the same in words, so color is never the only cue."""
+    series = sig.get("hrv_daily") or []
+    vals = [p["value"] for p in series if p["value"] is not None]
+    if len(vals) < 5:
+        return ""
+    band = sig.get("hrv")
+    lo_ref = min(vals + ([band["normal_low"]] if band else []))
+    hi_ref = max(vals + ([band["normal_high"]] if band else []))
+    pad = max(1.0, (hi_ref - lo_ref) * 0.15)
+    ymin, ymax = lo_ref - pad, hi_ref + pad
+    cells = []
+    last = len(series) - 1
+    for i, p in enumerate(series):
+        v = p["value"]
+        if v is None:
+            bar = f'<div style="height:2px;background:{LINE};font-size:0;line-height:0">&nbsp;</div>'
+        else:
+            h = max(3, int(round((v - ymin) / (ymax - ymin) * CHART_H)))
+            color = "#9ca3af"
+            if band and v < band["normal_low"]:
+                color = BAD
+            elif band and v > band["normal_high"]:
+                color = GOOD
+            if i == last and color == "#9ca3af":
+                color = INK_2  # emphasize the latest night
+            bar = (f'<div title="{p["day"]}: {v:g} ms" style="height:{h}px;background:{color};'
+                   f'border-radius:3px 3px 0 0;font-size:0;line-height:0">&nbsp;</div>')
+        cells.append(f'<td style="vertical-align:bottom;height:{CHART_H}px;padding:0 2px">{bar}</td>')
+    first_day, last_day = series[0]["day"][5:], series[-1]["day"][5:]
+    latest = next((p["value"] for p in reversed(series) if p["value"] is not None), None)
+    caption = "HRV, last 14 nights (ms)"
+    if band:
+        caption += f". Red: below your normal range ({band['normal_low']:g}-{band['normal_high']:g})"
+    return (f'<div style="font-size:12px;color:{MUTED};margin-bottom:6px">{escape(caption)}</div>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="table-layout:fixed;border-bottom:1px solid {LINE}"><tr>{"".join(cells)}</tr></table>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td style="font-size:11px;color:{MUTED};padding-top:3px">{first_day}</td>'
+            f'<td style="font-size:11px;color:{MUTED};padding-top:3px;text-align:right">{last_day}'
+            f'{f" &middot; {latest:g} ms" if latest is not None else ""}</td></tr></table>'
+            f'<div style="height:12px;font-size:0;line-height:0">&nbsp;</div>')
+
+
 def _trends(summary: dict) -> str:
     lines = trend_lines(summary)
-    if not lines:
+    chart = _hrv_chart(summary.get("signals") or {})
+    if not lines and not chart:
         return ""
     dot = {"good": GOOD, "bad": BAD, "neutral": "#9ca3af"}
     rows = "".join(
         f'<tr><td style="width:18px;vertical-align:top;padding:5px 0;color:{dot[tone]};font-size:12px">&#9679;</td>'
         f'<td style="padding:4px 0;color:{INK_2};font-size:14px;line-height:1.45">{escape(text)}</td></tr>'
         for text, tone in lines)
-    return _card(f'{_title("Trends")}<table role="presentation" width="100%" cellpadding="0" '
+    return _card(f'{_title("Trends")}{chart}<table role="presentation" width="100%" cellpadding="0" '
                  f'cellspacing="0">{rows}</table>')
 
 
@@ -256,19 +313,39 @@ FOCUS_ACCENT = {"lower_intensity": "#f59e0b", "prioritize_sleep": "#6366f1", "re
                 "go_hard": GOOD, "none": "#9ca3af"}
 
 
+CONFIDENCE_LABEL = {"high": "High confidence", "moderate": "Moderate confidence", "tentative": "Tentative"}
+CONFIDENCE_DOTS = {"high": 3, "moderate": 2, "tentative": 1}
+
+
+def _bullets(items: list[str], color: str) -> str:
+    rows = "".join(
+        f'<tr><td style="width:14px;vertical-align:top;color:{MUTED};padding:3px 0">&middot;</td>'
+        f'<td style="color:{color};font-size:14px;line-height:1.45;padding:3px 0">'
+        f'{escape(r[:1].upper() + r[1:])}</td></tr>' for r in items)
+    return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
+
+
+def _label(text: str, top: int = 12) -> str:
+    return f'<div style="font-size:12px;color:{MUTED};margin:{top}px 0 2px">{escape(text)}</div>'
+
+
 def _focus(summary: dict) -> str:
     f = summary.get("focus")
     if not f:
         return ""
     accent = FOCUS_ACCENT.get(f["focus"], "#9ca3af")
-    reasons = "".join(
-        f'<tr><td style="width:14px;vertical-align:top;color:{MUTED};padding:3px 0">&middot;</td>'
-        f'<td style="color:{INK_2};font-size:14px;line-height:1.45;padding:3px 0">'
-        f'{escape(r[:1].upper() + r[1:])}</td></tr>'
-        for r in f["reasons"])
-    reasons_html = (f'<div style="font-size:12px;color:{MUTED};margin:12px 0 2px">Why</div>'
-                    f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{reasons}</table>'
-                    if reasons else "")
+    chip = ""
+    if f.get("confidence"):
+        n = CONFIDENCE_DOTS[f["confidence"]]
+        dots = (f'<span style="color:{INK}">{"&#9679;" * n}</span>'
+                f'<span style="color:{LINE}">{"&#9679;" * (3 - n)}</span>')
+        chip = (f'<span style="display:inline-block;margin-left:8px;vertical-align:middle;background:#f3f4f6;'
+                f'border-radius:999px;padding:3px 9px;font-size:12px;color:{INK_2};font-weight:500">'
+                f'{dots}&nbsp; {CONFIDENCE_LABEL[f["confidence"]]}</span>')
+    headline = (f'<div style="font-size:15px;color:{INK_2};margin-top:6px">{escape(f["headline"])}</div>'
+                if f.get("headline") else "")
+    why = (_label("Why") + _bullets(f["reasons"], INK_2)) if f.get("reasons") else ""
+    other = (_label("Pointing the other way") + _bullets(f["counter"], MUTED)) if f.get("counter") else ""
     block_html = ""
     if f.get("block"):
         b = f["block"]
@@ -278,14 +355,17 @@ def _focus(summary: dict) -> str:
                       f'<span style="font-size:15px;font-weight:600;color:{INK}">{b["start"]}-{b["end"]}</span>'
                       f'<span style="color:{MUTED}"> &nbsp;&middot;&nbsp; </span>'
                       f'<span style="font-size:14px;color:{INK_2}">{escape(b["title"])}</span></td></tr></table>')
-    note_html = (f'<div style="font-size:13px;color:{INK_2};margin-top:12px">{escape(f["note"])}</div>'
-                 if f.get("note") else "")
+    small = [x for x in [*f.get("alternatives", []), f.get("note"), f.get("caveat")] if x]
+    small_html = "".join(f'<div style="font-size:13px;color:{MUTED};margin-top:8px;line-height:1.45">'
+                         f'{escape(x)}</div>' for x in small)
+    if small_html:
+        small_html = f'<div style="margin-top:6px">{small_html}</div>'
     focus_title = _title("Today's focus")
     body = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td style="width:4px;background:{accent};border-radius:4px"></td><td style="padding-left:16px">'
             f'{focus_title}'
-            f'<div style="font-size:22px;font-weight:600;color:{INK};line-height:1.25">{escape(f["title"])}</div>'
-            f'{reasons_html}{block_html}{note_html}</td></tr></table>')
+            f'<div style="font-size:22px;font-weight:600;color:{INK};line-height:1.25">{escape(f["title"])}{chip}</div>'
+            f'{headline}{why}{other}{block_html}{small_html}</td></tr></table>')
     return _card(body)
 
 

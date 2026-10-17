@@ -106,3 +106,23 @@ def test_usual_bedtime_handles_midnight():
     panel = pd.DataFrame({"sleep_start_local": starts}, index=pd.Index(days, name="day"))
     bt = usual_bedtime(panel, TODAY)
     assert 23 * 60 + 30 <= bt <= 24 * 60 + 30
+
+
+def test_advice_states_confidence_counter_evidence_and_why_not_hard():
+    sig = {"load": dict(ratio=1.55, consecutive_hard_days=3, level="very_high"),
+           "hrv": dict(status="below", recent_mean=48, normal_low=55, normal_high=61),
+           "resting_hr": dict(status="within", recent_mean=55, normal_low=54, normal_high=56)}
+    s = summary(signals=sig)
+    s["metrics"].append(dict(key="sleep_performance_pct", value=85, status="typical", delta=0))
+    f = choose_focus(s, EMPTY, TODAY)
+    assert f["focus"] == "lower_intensity" and f["confidence"] in ("high", "moderate", "tentative")
+    assert f["headline"] and f["caveat"]
+    assert any("resting heart rate is within" in c for c in f["counter"])
+    assert any("sleep performance was 85%" in c for c in f["counter"])
+    why_not = " ".join(f["alternatives"])
+    assert "Not a hard session today" in why_not and "HRV is below" in why_not and "3 hard days" in why_not
+
+
+def test_confidence_bands():
+    from src.planner.focus import confidence
+    assert confidence(0.8) == "high" and confidence(0.65) == "moderate" and confidence(0.5) == "tentative"

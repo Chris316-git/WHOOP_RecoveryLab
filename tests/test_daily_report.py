@@ -70,3 +70,12 @@ def test_missing_last_night_is_reported():
     assert s["last_night_scored"] is False
     subject, html, _ = render_email(s)
     assert "not scored" in subject and "not scored yet" in html and "{" not in html
+
+
+def test_hrv_chart_and_focus_details_render():
+    events = [dict(start=at(9), end=at(17), attendee_count=3)]
+    s = build_daily_summary(panel(), TODAY, TZ, events, now=at(8))
+    assert len(s["signals"]["hrv_daily"]) == 14
+    _, html, text = render_email(s)
+    assert "HRV, last 14 nights" in html and html.count("border-radius:3px 3px 0 0") >= 5
+    assert "TODAY'S FOCUS" in text

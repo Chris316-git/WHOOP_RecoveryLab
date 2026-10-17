@@ -154,8 +154,19 @@ def weekday_pattern(panel: pd.DataFrame, today: date) -> dict | None:
     )
 
 
+def daily_series(panel: pd.DataFrame, today: date, col: str, days: int = 14) -> list[dict]:
+    """The last `days` values of `col` (None for missing days), oldest first, for small charts."""
+    out = []
+    for k in range(days, 0, -1):
+        d = today - timedelta(days=k)
+        v = panel.at[d, col] if (col in panel and d in panel.index) else None
+        out.append(dict(day=d.isoformat(), value=None if v is None or pd.isna(v) else round(float(v), 1)))
+    return out
+
+
 def compute_signals(panel: pd.DataFrame, today: date) -> dict:
     return dict(
+        hrv_daily=daily_series(panel, today, "hrv_rmssd_milli"),
         hrv=vital_trend(panel, today, "hrv_rmssd_milli", log_scale=True, min_half_width=0.03),  # about ±3%
         resting_hr=vital_trend(panel, today, "resting_heart_rate", min_half_width=1.0),         # ±1 bpm
         sleep=sleep_shortfall(panel, today),

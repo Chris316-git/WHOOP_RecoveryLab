@@ -194,17 +194,27 @@ def _recover_between(summary: dict, sig: dict, free: list[dict]) -> Candidate:
     return c
 
 
+def hard_day_blockers(summary: dict, sig: dict) -> list[str]:
+    """Why a hard session is NOT advised today (empty list = nothing stands in the way)."""
+    load, hrv, sleep = sig.get("load") or {}, sig.get("hrv") or {}, sig.get("sleep") or {}
+    out = []  # most informative first; the recovery zone is already shown at the top of the email
+    if hrv.get("status") == "below":
+        out.append("HRV is below your normal range")
+    if load.get("consecutive_hard_days", 0) >= 2:
+        out.append(f"{load['consecutive_hard_days']} hard days in a row")
+    if load.get("ratio", 1.0) > 1.1:
+        out.append(f"recent load is already {load['ratio']:g}x your 4-week average")
+    if sleep.get("shortfall_min", 0) >= 120:
+        out.append("you are behind on sleep")
+    if summary["recovery_zone"] != "green":
+        out.append(f"recovery is {summary['recovery_zone']}, not green")
+    return out
+
+
 def _go_hard(summary: dict, sig: dict, free: list[dict], bedtime: int) -> Candidate:
     c = Candidate("go_hard")
-    load, hrv, sleep = sig.get("load") or {}, sig.get("hrv") or {}, sig.get("sleep") or {}
-    blockers = [
-        summary["recovery_zone"] != "green",
-        hrv.get("status") == "below",
-        load.get("ratio", 1.0) > 1.1,
-        load.get("consecutive_hard_days", 0) >= 2,
-        sleep.get("shortfall_min", 0) >= 120,
-    ]
-    if any(blockers):
+    load, hrv = sig.get("load") or {}, sig.get("hrv") or {}
+    if hard_day_blockers(summary, sig):
         return c
     c.add(0.4, f"recovery is {summary['metrics'][0]['value']:g}%, in the green zone")
     if _metric(summary, "recovery_score").get("status") == "better":
@@ -223,6 +233,74 @@ def _go_hard(summary: dict, sig: dict, free: list[dict], bedtime: int) -> Candid
 
 
 # ---------------- entry point ----------------
+
+# ---------------- confidence, counter-evidence, alternatives ----------------
+
+CONFIDENCE_BANDS = [(0.75, "high"), (0.6, "moderate"), (0.0, "tentative")]
+HEADLINES = {  # wording follows how strong the evidence is
+    "lower_intensity": {"high": "Keep today light.", "moderate": "A lighter day is probably the better call.",
+                        "tentative": "Consider keeping today on the lighter side."},
+    "prioritize_sleep": {"high": "Make tonight's sleep the priority.",
+                         "moderate": "An earlier night would probably help.",
+                         "tentative": "If you can, aim for an earlier night."},
+    "recover_between": {"high": "Protect a few short breaks today.",
+                        "moderate": "A short break or two would probably help today.",
+                        "tentative": "If the day allows, take a short break."},
+    "go_hard": {"high": "Today is a good day to push.", "moderate": "Today looks like a good day for a harder session.",
+                "tentative": "A harder session looks reasonable today."},
+}
+CAVEAT = "These are rules of thumb from your data, not a diagnosis. Adjust to how you actually feel."
+
+
+def confidence(score: float) -> str:
+    return next(label for cut, label in CONFIDENCE_BANDS if score >= cut)
+
+
+def counter_evidence(focus: str, summary: dict, sig: dict) -> list[str]:
+    """Signals that point the other way, so the advice never looks more certain than it is."""
+    out = []
+    zone = summary["recovery_zone"]
+    rhr, hrv, sleep, load = sig.get("resting_hr"), sig.get("hrv"), sig.get("sleep"), sig.get("load")
+    perf = _metric(summary, "sleep_performance_pct")
+    if focus == "lower_intensity":
+        if zone == "green":
+            out.append(f"recovery is {summary['metrics'][0]['value']:g}%, in the green zone")
+        if rhr and rhr["status"] in ("within", "below"):
+            out.append(f"resting heart rate is {rhr['status']} your normal range")
+        if perf.get("value") is not None and perf.get("status") in ("typical", "better"):
+            out.append(f"sleep performance was {perf['value']:g}%, normal for you")
+        if sleep and sleep["shortfall_min"] < 60:
+            out.append("you are not behind on sleep")
+    elif focus == "prioritize_sleep":
+        if zone == "green":
+            out.append("your recovery is holding up so far")
+        if hrv and hrv["status"] in ("within", "above"):
+            out.append(f"HRV is {hrv['status']} your normal range")
+    elif focus == "recover_between":
+        if zone == "green":
+            out.append("your recovery is good")
+    elif focus == "go_hard":
+        if sleep and 60 <= sleep["shortfall_min"] < 120:
+            out.append("you are slightly behind on sleep this week")
+        if rhr and rhr["status"] == "above":
+            out.append("resting heart rate is above your normal range")
+        if load and load["level"] == "high":
+            out.append("training load is on the high side")
+    return out
+
+
+def alternatives(focus: str, considered: list, summary: dict, sig: dict) -> list[str]:
+    """Why this focus and not another one."""
+    out = []
+    if focus != "go_hard":
+        blockers = hard_day_blockers(summary, sig)
+        if blockers:
+            out.append("Not a hard session today: " + "; ".join(blockers[:2]) + ".")
+    runner = next(((k, sc) for k, sc in considered if k != focus and sc > 0), None)
+    if runner and runner[0] != "go_hard":
+        out.append(f"Also considered: {TITLES[runner[0]].lower()} (weaker evidence today).")
+    return out
+
 
 REPEAT_DAMPING = 0.6      # same focus already chosen on each of the last REPEAT_DAYS days ...
 REPEAT_DAYS = 2
@@ -243,9 +321,9 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
     target_bedtime = max(EARLIEST_TARGET_BEDTIME, bedtime - 30)
 
     if not summary.get("last_night_scored"):
-        return dict(focus="none", title="Waiting for last night's data", score=0.0, reasons=[],
-                    block=None, note="Your plan will be based on today's recovery once WHOOP has scored it.",
-                    considered=[])
+        return dict(focus="none", title="Waiting for last night's data", score=0.0, confidence=None,
+                    headline="Your plan will be based on today's recovery once WHOOP has scored it.",
+                    reasons=[], counter=[], alternatives=[], caveat=None, block=None, note=None, considered=[])
 
     candidates = [
         _lower_intensity(summary, sig, free, bedtime),
@@ -260,10 +338,17 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
     considered = sorted(((c.key, c.score) for c in candidates), key=lambda kv: (-kv[1], PRIORITY.index(kv[0])))
     best_key, best_score = considered[0]
     if best_score < THRESHOLD:
-        return dict(focus="none", title=TITLES["none"], score=best_score, block=None,
+        hints = ([f"Closest call: {TITLES[best_key].lower()}, but the evidence is weak."]
+                 if best_score > 0.25 else [])
+        return dict(focus="none", title=TITLES["none"], score=best_score, block=None, confidence=None,
+                    headline="Keep your normal plan.",
                     reasons=["your recovery, sleep and training load are within your usual range"],
-                    note="Keep your normal plan.", considered=considered)
+                    counter=[], alternatives=hints, caveat=None, note=None, considered=considered)
     best = next(c for c in candidates if c.key == best_key)
     reasons = [r for _, r in sorted(best.triggers, key=lambda t: -t[0])]
-    return dict(focus=best.key, title=TITLES[best.key], score=best_score, reasons=reasons,
-                block=best.block, note=best.note, considered=considered)
+    level = confidence(best_score)
+    return dict(focus=best.key, title=TITLES[best.key], score=best_score, confidence=level,
+                headline=HEADLINES[best.key][level], reasons=reasons,
+                counter=counter_evidence(best.key, summary, sig),
+                alternatives=alternatives(best.key, considered, summary, sig),
+                caveat=CAVEAT, block=best.block, note=best.note, considered=considered)

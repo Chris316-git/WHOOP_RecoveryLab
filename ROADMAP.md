@@ -55,21 +55,28 @@ Re-check competitors before making public claims.
 - Google Calendar sync (time blocks only) and daily schedule features
 - Daily email: last night vs. your 30-day baseline, 7-day trend, today's free blocks, rule-based hints
 - GitHub Actions job every 30 minutes; per-user send time, time zone and "wait for sleep score"
+- Personal trends in the email: HRV and resting heart rate vs. your normal range, 7-night sleep
+  shortfall, training load ratio and hard-day streaks, weekday sleep patterns
 - OAuth tokens encrypted in the database; privacy policy
 - Work in progress (not merged): experiment tables, ABAB design, Bayesian AR(1) engine,
   synthetic data generator. The intervals still need calibration: 90% credible intervals
   currently cover about 80-88% in simulation.
 
-## Phase 1: Daily health intelligence (mostly done)
+## Phase 1: Daily health intelligence (done)
 
 Goal: each morning, an accurate picture of where you stand relative to *your own* normal.
 
-- Done: last night vs. the 30-day baseline (median and percentile), the 7-day trend, today's calendar load.
-- To add:
-  - **Trends:** HRV and resting heart rate, 7-day vs. 30-day; sleep debt over the last 7 nights.
-  - **Training load:** 7-day vs. 28-day strain ratio, consecutive hard days.
-  - **Weekday patterns:** e.g. "you usually sleep less on Tuesdays and Wednesdays".
-- These signals are the inputs for Phase 2. All of them are computed in code and tested.
+- Last night vs. the 30-day baseline (median and percentile), and today's calendar load.
+- **Trends** (`src/report/signals.py`):
+  - HRV (log scale) and resting heart rate: the last 7 days vs. a normal range (mean ± 0.5 SD,
+    with a minimum width) from the 30 days before them.
+  - Sleep shortfall over the last 7 nights vs. WHOOP's baseline sleep need (8 h assumed, and
+    labeled as such, when unavailable).
+- **Training load:** the 7-day vs. 28-day mean strain ratio, and consecutive hard days (strain ≥ 14).
+- **Weekday pattern:** mentioned only when tonight's weekday is reliably a short-sleep night
+  (≥ 30 min less, on at least 75% of those nights over the last 8 weeks).
+- Every signal needs a minimum amount of history; otherwise it is left out instead of guessed.
+  These signals are the inputs for Phase 2.
 
 ## Phase 2: Daily planner, with one focus a day
 
@@ -225,7 +232,7 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 
 ## Order of work
 
-1. **Phase 1 additions:** trends, load, weekday patterns.
+1. ~~**Phase 1 additions:** trends, load, weekday patterns.~~ Done.
 2. **Phase 2:** focus selection and threshold, then slot finding, the "Today's focus" email,
    signed action links with a minimal endpoint, the dedicated calendar, and finally the LLM wording.
 3. **Phase 3:** decision log, completion checks, "was it helpful?".

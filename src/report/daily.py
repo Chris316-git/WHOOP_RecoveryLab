@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from src.report.signals import compute_signals
+
 BASELINE_DAYS = 30
 MIN_BASELINE_NIGHTS = 7
 ACTIVE_START, ACTIVE_END = time(8, 0), time(20, 0)
@@ -177,6 +179,7 @@ def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
         yesterday_strain=None if strain is None or pd.isna(strain) else round(float(strain), 1),
         week_trend=trend,
         calendar=calendar_summary(events_today, today, tz, now) if events_today is not None else None,
+        signals=compute_signals(panel, today),
     )
     summary["suggestions"] = suggestions(summary)
     return summary

@@ -26,6 +26,59 @@ def _delta(m: dict) -> str:
     return f"{sign}{size} vs usual"
 
 
+TONE_COLORS = {"good": "#16a34a", "bad": "#dc2626", "neutral": "#374151"}
+
+
+def _events(n: int) -> str:
+    return f"{n} event" + ("" if n == 1 else "s")
+
+
+def _hm(minutes: float) -> str:
+    h, m = divmod(int(round(minutes)), 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
+
+
+def trend_lines(summary: dict) -> list[tuple[str, str]]:
+    """(text, tone) lines for the Trends section; only signals with enough data appear."""
+    sig = summary.get("signals") or {}
+    lines: list[tuple[str, str]] = []
+    hrv = sig.get("hrv")
+    if hrv:
+        tone = {"below": "bad", "above": "good"}.get(hrv["status"], "neutral")
+        lines.append((f"HRV, last 7 days: {hrv['recent_mean']:g} ms, {hrv['status']} your normal range "
+                      f"({hrv['normal_low']:g}-{hrv['normal_high']:g})", tone))
+    rhr = sig.get("resting_hr")
+    if rhr:
+        tone = {"above": "bad", "below": "good"}.get(rhr["status"], "neutral")
+        lines.append((f"Resting heart rate, last 7 days: {rhr['recent_mean']:g} bpm, {rhr['status']} your normal "
+                      f"range ({rhr['normal_low']:g}-{rhr['normal_high']:g})", tone))
+    sl = sig.get("sleep")
+    if sl:
+        need = f"{_hm(sl['need_min'])} need" + (" (assumed)" if sl["need_source"] != "whoop" else "")
+        if sl["shortfall_min"] >= 60:
+            lines.append((f"Sleep, last {sl['nights_measured']} nights: {_hm(sl['shortfall_min'])} short of your "
+                          f"{need}; {sl['nights_short']} short nights", "bad"))
+        else:
+            lines.append((f"Sleep, last {sl['nights_measured']} nights: on track with your {need}", "good"))
+    load = sig.get("load")
+    if load:
+        label = {"low": "lighter than usual", "normal": "normal", "high": "high",
+                 "very_high": "very high"}[load["level"]]
+        text = f"Training load: {load['ratio']:g}x your 4-week average ({label})"
+        if load["consecutive_hard_days"] >= 2:
+            text += f"; {load['consecutive_hard_days']} hard days in a row"
+        lines.append((text, "bad" if load["level"] in ("high", "very_high") else "neutral"))
+    wd = sig.get("weekday")
+    if wd:
+        lines.append((f"Tonight: {wd['weekday']} is usually a short night for you "
+                      f"({abs(wd['gap_min'])} min less, {wd['nights']} recent {wd['weekday']}s)", "neutral"))
+    if not lines:  # not enough history for trends yet: fall back to the simple 7-day means
+        for key, t in summary.get("week_trend", {}).items():
+            label = "Recovery" if key == "recovery_score" else "HRV"
+            lines.append((f"{label}, last 7 days: {t['week_mean']:g} (usual {t['baseline_median']:g})", "neutral"))
+    return lines
+
+
 def subject(summary: dict) -> str:
     rec = summary["metrics"][0]["value"]
     head = f"Recovery Lab · {summary['weekday']} {summary['date']}"
@@ -45,13 +98,13 @@ def render_text(summary: dict, notices: list[str]) -> str:
                      f"({STATUS_TEXT[m['status']]})")
     if summary["yesterday_strain"] is not None:
         lines.append(f"  {'Yesterday strain':20s} {summary['yesterday_strain']:>10g}")
-    for key, t in summary["week_trend"].items():
-        label = "Recovery" if key == "recovery_score" else "HRV"
-        lines.append(f"7-day {label}: {t['week_mean']:g} (30-day median {t['baseline_median']:g})")
+    trends = trend_lines(summary)
+    if trends:
+        lines += ["", "Trends"] + [f"  {t}" for t, _ in trends]
     cal = summary["calendar"]
     if cal:
         lines += ["", "Today's calendar",
-                  f"  {cal['event_count']} events, {cal['busy_hours']:g} busy hours"
+                  f"  {_events(cal['event_count'])}, {cal['busy_hours']:g} busy hours"
                   + (f", {cal['first_start']}-{cal['last_end']}" if cal["first_start"] else "")]
         if cal["free_windows"]:
             lines.append("  Free: " + ", ".join(f"{w['start']}-{w['end']}" for w in cal["free_windows"]))
@@ -92,18 +145,17 @@ def render_html(summary: dict, notices: list[str]) -> str:
                     f'text-align:right"><b>{summary["yesterday_strain"]:g}</b></td><td></td></tr>')
     parts.append('<table style="width:100%;border-collapse:collapse;font-size:15px">' + "".join(rows) + "</table>")
 
-    if summary["week_trend"]:
-        items = []
-        for key, t in summary["week_trend"].items():
-            label = "Recovery" if key == "recovery_score" else "HRV"
-            items.append(f"{label} {t['week_mean']:g} (usual {t['baseline_median']:g})")
-        parts.append(f'<p style="color:#374151">Last 7 days: {escape(" · ".join(items))}</p>')
+    trends = trend_lines(summary)
+    if trends:
+        items = "".join(f'<li style="color:{TONE_COLORS[tone]};margin:2px 0">{escape(t)}</li>' for t, tone in trends)
+        parts.append('<h3 style="margin-bottom:4px">Trends</h3>'
+                     f'<ul style="margin-top:0;padding-left:18px">{items}</ul>')
 
     cal = summary["calendar"]
     if cal:
         span = f" · {cal['first_start']}-{cal['last_end']}" if cal["first_start"] else ""
         free = ", ".join(f"{w['start']}-{w['end']}" for w in cal["free_windows"]) or "none"
-        parts.append(f'<h3 style="margin-bottom:4px">Today</h3><p style="margin:0">{cal["event_count"]} events · '
+        parts.append(f'<h3 style="margin-bottom:4px">Today</h3><p style="margin:0">{_events(cal["event_count"])} · '
                      f'{cal["busy_hours"]:g} busy hours{escape(span)}<br>Free blocks: {escape(free)}</p>')
     if summary["suggestions"]:
         tips = "".join(f"<li>{escape(s)}</li>" for s in summary["suggestions"])

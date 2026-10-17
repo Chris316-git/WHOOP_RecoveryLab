@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.analysis.panel import build_panel
 from src.db.models import CalendarEvent, Cycle, DailyCalendarFeatures, Recovery, Sleep
 
-HISTORY_DAYS = 45
+HISTORY_DAYS = 70  # enough for 30-day baselines before the last week and 8 weeks of weekday patterns
 
 
 def _as_dict(obj) -> dict:

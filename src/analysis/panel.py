@@ -53,6 +53,21 @@ def cycle_day(row: dict) -> date:
     return (start + (end - start) / 2).date()
 
 
+def sleep_need_minutes(raw: dict | None) -> tuple[float | None, float | None]:
+    """WHOOP's sleep need from a raw sleep payload: (baseline, total) in minutes.
+
+    total = baseline + need from sleep debt + need from recent strain - credit from naps.
+    Returns (None, None) when the payload has no sleep_needed block.
+    """
+    need = ((raw or {}).get("score") or {}).get("sleep_needed") or {}
+    base = need.get("baseline_milli")
+    if base is None:
+        return None, None
+    extra = sum(need.get(k) or 0 for k in ("need_from_sleep_debt_milli", "need_from_recent_strain_milli"))
+    total = base + extra + (need.get("need_from_recent_nap_milli") or 0)  # nap credit is negative
+    return round(base / 60_000, 1), round(total / 60_000, 1)
+
+
 def build_panel(
     sleeps: list[dict],
     recoveries: list[dict],
@@ -66,6 +81,7 @@ def build_panel(
         if s.get("nap") or not _scored(s) or s.get("start") is None:
             continue
         stages = [s.get("light_min"), s.get("deep_min"), s.get("rem_min")]
+        need_base, need_total = sleep_need_minutes(s.get("raw"))
         sleep_rows.append(dict(
             day=sleep_day(s),
             sleep_id=str(s["id"]),
@@ -77,6 +93,9 @@ def build_panel(
             sleep_efficiency_pct=s.get("sleep_efficiency_pct"),
             respiratory_rate=s.get("respiratory_rate"),
             tz_offset_min=parse_offset(s.get("timezone_offset")),
+            sleep_start_local=_local(s["start"], parse_offset(s.get("timezone_offset"))),
+            sleep_need_baseline_min=need_base,
+            sleep_need_total_min=need_total,
         ))
     if not sleep_rows:
         return pd.DataFrame(columns=["day", *PANEL_METRICS]).set_index("day")
@@ -101,6 +120,7 @@ def build_panel(
 
     panel["dow"] = [d.weekday() for d in panel.index]  # Monday = 0
     panel.index.name = "day"
-    numeric = [*PANEL_METRICS, "strain", *CALENDAR_COLUMNS, "tz_offset_min"]
+    numeric = [*PANEL_METRICS, "strain", *CALENDAR_COLUMNS, "tz_offset_min",
+               "sleep_need_baseline_min", "sleep_need_total_min"]
     panel[numeric] = panel[numeric].apply(pd.to_numeric, errors="coerce")
     return panel

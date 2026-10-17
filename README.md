@@ -38,6 +38,7 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Daily morning email: sync, compare last night with your 30-day baseline, list today's free blocks
 - [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
 - [x] Per-user send time and time zone
+- [x] Personal trends: HRV and resting heart rate vs. your normal range, sleep shortfall, training load, weekday patterns
 - [ ] Daily planner: one focus a day (or "nothing to change"), placed in real free time
 - [ ] Accept / adjust / decline links; confirmed blocks go to a dedicated "Recovery Lab" calendar
 - [ ] Feedback loop: did the advice happen, and did it help?

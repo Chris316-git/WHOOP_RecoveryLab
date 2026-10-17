@@ -59,11 +59,13 @@ def test_summary_compares_with_own_baseline_and_suggests():
     assert any("shorter than your usual" in t for t in s["suggestions"])
     assert any("Heavy calendar" in t for t in s["suggestions"])
     subject, html, text = render_email(s)
-    assert "Recovery 80%" in subject and "80%" in html and "Free" in text
+    assert "Recovery 80%" in subject and "Free" in text
+    assert ">80</span>" in html and "Green" in html and "RECOVERY LAB" in html and "{" not in html
 
 
 def test_missing_last_night_is_reported():
     df = panel().drop(index=TODAY - timedelta(days=1))
     s = build_daily_summary(df, TODAY, TZ, None)
     assert s["last_night_scored"] is False
-    assert "not scored" in render_email(s)[0]
+    subject, html, _ = render_email(s)
+    assert "not scored" in subject and "not scored yet" in html and "{" not in html

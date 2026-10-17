@@ -101,6 +101,27 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
             merged.append([s, e])
     busy_min = sum((e - s).total_seconds() / 60 for s, e in merged)
     windows = free_windows(events, day, tz, now)
+
+    # Busy/free segments across the active window (08:00-20:00), for the email timeline.
+    win_start = datetime.combine(day, ACTIVE_START, zone)
+    win_end = datetime.combine(day, ACTIVE_END, zone)
+    timeline, cursor = [], win_start
+    for s, e in merged:
+        s, e = max(s, win_start), min(e, win_end)
+        if e <= s:
+            continue
+        if s > cursor:
+            timeline.append(("free", cursor, s))
+        timeline.append(("busy", s, e))
+        cursor = max(cursor, e)
+    if cursor < win_end:
+        timeline.append(("free", cursor, win_end))
+    total = (win_end - win_start).total_seconds()
+    timeline = [dict(kind=k, start=a.astimezone(zone).strftime("%H:%M"), end=b.astimezone(zone).strftime("%H:%M"),
+                     share=round((b - a).total_seconds() / total, 4)) for k, a, b in timeline]
+    now_share = None
+    if now is not None and win_start <= now.astimezone(zone) <= win_end:
+        now_share = round((now.astimezone(zone) - win_start).total_seconds() / total, 4)
     return dict(
         event_count=len(spans),
         meeting_count=sum(1 for e in events if e.get("attendee_count", 0) >= 2),
@@ -109,6 +130,8 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
         last_end=merged[-1][1].astimezone(zone).strftime("%H:%M") if merged else None,
         free_windows=windows,
         longest_free=max(windows, key=lambda w: w["minutes"]) if windows else None,
+        timeline=timeline,
+        now_share=now_share,
     )
 
 

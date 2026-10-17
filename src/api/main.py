@@ -164,8 +164,11 @@ def action_submit(token: str, request: Request, choice: int | None = None):
             outcome = service.undo(t)
     except PlanNotFound as exc:
         return HTMLResponse(pages.done("Not found", str(exc)), status_code=404)
+    title = RESULT_TITLES.get(outcome.status, "Done")
+    if outcome.calendar in ("failed", "not_connected"):
+        title = "Saved, but not on your calendar yet"
     return _no_store(HTMLResponse(pages.done(
-        RESULT_TITLES.get(outcome.status, "Done"), outcome.message, outcome.block,
+        title, outcome.message, outcome.block,
         undo_url=_link(t, "undo", key) if outcome.can_undo else None,
         not_useful_url=_link(t, "not_useful", key) if outcome.ask_not_useful else None)))
 

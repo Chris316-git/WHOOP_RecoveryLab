@@ -4,6 +4,7 @@ Dependencies are injected (session factory, calendar, clock) so the same logic r
 endpoint and in tests. Every action looks at the plan's current state first, so a repeated
 click (or a page reload) never does the same thing twice.
 """
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -52,6 +53,16 @@ class GoogleCalendar:
         delete_event(self._service(user_id), calendar_id, event_id)
 
 
+log = logging.getLogger("recovery_lab.actions")
+
+
+def _calendar_error(exc: Exception) -> str:
+    """Log the full error for the host's logs; return a short, data-free label for the page."""
+    log.exception("calendar write failed")
+    status = getattr(getattr(exc, "resp", None), "status", None)  # googleapiclient HttpError
+    return f"{type(exc).__name__}{f' {status}' if status else ''}"
+
+
 class PlanNotFound(LookupError):
     pass
 
@@ -71,7 +82,8 @@ CALENDAR_MESSAGES = {
     "added": "On your Recovery Lab calendar, with a reminder 15 minutes before.",
     "not_connected": "Noted. To have it put on your calendar, re-run `make connect-google` once so "
                      "Recovery Lab may manage its own calendar.",
-    "failed": "Noted, but the calendar could not be updated right now.",
+    "failed": "Noted, but the calendar could not be updated right now. Tap the button in the email again "
+              "to retry.",
 }
 
 
@@ -127,7 +139,8 @@ class ActionService:
         try:
             self.calendar.remove(token.user_id, plan["calendar_id"], plan["event_id"])
             return True
-        except Exception:
+        except Exception as exc:
+            _calendar_error(exc)
             return False
 
     def add(self, token: ActionToken, block: dict | None = None) -> Outcome:
@@ -142,25 +155,28 @@ class ActionService:
         if scheduled:  # Change time on something already added: move the event
             try:
                 self.calendar.move(token.user_id, plan["calendar_id"], plan["event_id"], *args)
-            except Exception:
-                return Outcome("already", CALENDAR_MESSAGES["failed"], plan["final_block"], "failed", can_undo=True)
+            except Exception as exc:
+                return Outcome("already", f"{CALENDAR_MESSAGES['failed']} ({_calendar_error(exc)})",
+                               plan["final_block"], "failed", can_undo=True)
             self._save(token, final_block=chosen, response="added")
             return Outcome("moved", CALENDAR_MESSAGES["added"], chosen, "added", can_undo=True)
         with self.session_factory() as session:
             settings = session.get(UserSettings, token.user_id)
             current_cal = settings.rl_calendar_id if settings else None
+        error = None
         try:
             written = self.calendar.add(token.user_id, *args, current_cal)
             calendar = "not_connected" if written is None else "added"
-        except Exception:
-            written, calendar = None, "failed"
+        except Exception as exc:
+            written, calendar, error = None, "failed", _calendar_error(exc)
         if written:
             cal_id, event_id = written
             self._save(token, response="added", calendar_status="scheduled", final_block=chosen,
                        calendar_id=cal_id, event_id=event_id)
         else:
             self._save(token, response="added", final_block=chosen)
-        return Outcome("added", CALENDAR_MESSAGES[calendar], chosen, calendar, can_undo=written is not None)
+        message = CALENDAR_MESSAGES[calendar] + (f" ({error})" if error else "")
+        return Outcome("added", message, chosen, calendar, can_undo=written is not None)
 
     def change(self, token: ActionToken, choice: int) -> Outcome:
         options = self.options(token)

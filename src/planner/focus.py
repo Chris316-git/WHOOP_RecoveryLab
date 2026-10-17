@@ -114,6 +114,11 @@ def find_slot(free_windows: list[dict], minutes: int, latest_end: int | None = N
         if e - s < minutes:
             continue
         start = min(max(s, lo), e - minutes) if prefer else s   # as close to the preferred range as fits
+        quarter = -(-start // 15) * 15                          # round up to :00, :15, :30 or :45 ...
+        if quarter <= e - minutes:
+            start = quarter
+        elif (start // 15) * 15 >= s:                            # ... or down, if up no longer fits
+            start = (start // 15) * 15
         distance = 0 if lo <= start <= hi else min(abs(start - lo), abs(start - hi))
         if prefer is None:
             distance = start

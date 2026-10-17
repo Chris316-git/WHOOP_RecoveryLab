@@ -162,3 +162,9 @@ def test_todays_case_hard_yesterday_low_hrv_and_chronic_sleep_debt():
     # chronic sleep debt now counts even though it is "your usual week"
     sleep_score = dict(f["considered"])["prioritize_sleep"]
     assert sleep_score >= THRESHOLD
+
+
+def test_slots_start_on_the_quarter_hour():
+    assert find_slot([dict(start="15:16", end="24:00", minutes=524)], 30, prefer=(19 * 60 - 1, 20 * 60))["start"] \
+        == "19:00"
+    assert find_slot([dict(start="15:16", end="16:00", minutes=44)], 30, prefer=None)["start"] == "15:30"

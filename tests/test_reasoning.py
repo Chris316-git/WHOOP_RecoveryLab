@@ -115,3 +115,13 @@ def test_no_change_day_is_a_valid_answer():
     r = run(ai(focus_type="none", title="Nothing needs to change today", headline="Keep your normal plan today.",
                confidence=None, reasons=[], action=dict(type="none"), hypothesis=None))
     assert r["status"] == "ok" and r["focus"]["block"] is None and not r["focus"]["schedulable"]
+
+
+def test_sleep_focus_needs_a_wind_down_block_and_short_reasons():
+    r = run(ai(action=dict(type="guidance", title="Go to bed a bit earlier")))
+    assert r["status"] == "rejected" and "missing calendar block" in r["problems"]
+    many = [dict(text="Short on sleep.", evidence=["E1"])] * 4
+    assert "reasons count" in run(ai(reasons=many))["problems"]
+    assert "banned wording" in run(ai(headline="Your body looks under-recovered."))["problems"]
+    s, case = setup()
+    assert case["constraints"]["default_target_bedtime"] == "23:00"

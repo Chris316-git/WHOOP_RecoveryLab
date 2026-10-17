@@ -12,7 +12,7 @@ from datetime import date, datetime
 
 import pandas as pd
 
-from src.planner.focus import TITLES, hard_day_blockers, usual_bedtime
+from src.planner.focus import DEFAULT_BEDTIME, EARLIEST_TARGET_BEDTIME, TITLES, hard_day_blockers, usual_bedtime
 
 HISTORY_DAYS = 7
 
@@ -146,6 +146,8 @@ def build_case(summary: dict, panel: pd.DataFrame, today: date, now: datetime | 
         evidence=evidence,
         constraints=dict(
             usual_bedtime=_clock(bedtime) if bedtime is not None else None,
+            # the rule engine's default target: 30 min before your usual bedtime, not before 21:30
+            default_target_bedtime=_clock(max(EARLIEST_TARGET_BEDTIME, (bedtime or DEFAULT_BEDTIME) - 30)),
             free_windows=(cal or {}).get("free_windows") if cal else None,
             hard_session_allowed=not blockers,
         ),

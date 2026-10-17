@@ -20,7 +20,8 @@ from src.planner.focus import CAVEAT, TITLES
 FOCUS_TYPES = {"lower_intensity", "prioritize_sleep", "recover_between", "go_hard", "other", "none"}
 CONFIDENCE = {"high", "moderate", "tentative"}
 ACTION_TYPES = {"calendar_block", "guidance", "none"}
-BANNED = ("diagnos", "disease", "illness", "disorder", "medication", "medicine", "supplement", "pill", "drug",
+BANNED = ("under-recovered", "underrecovered", "overtrain", "burnout",
+          "diagnos", "disease", "illness", "disorder", "medication", "medicine", "supplement", "pill", "drug",
           "calorie", "fasting", "diet", "alcohol", "doctor", "emergency", "dangerous", "guarantee", "you must")
 HARD_WORDS = ("interval", "hard session", "hard workout", "heavy", "max effort", "sprint", "race", "tempo", "hiit",
               "intense", "all-out", "threshold")
@@ -63,7 +64,7 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
 
     ids = {e["id"] for e in case["evidence"]}
     reasons, counter = out.get("reasons") or [], out.get("counter") or []
-    if ft != "none" and not 1 <= len(reasons) <= 4:
+    if ft != "none" and not 1 <= len(reasons) <= 3:
         problems.append("reasons count")
     if len(counter) > 2:
         problems.append("counter count")
@@ -145,6 +146,9 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
             problems.append("hard session against the data")
     if ft == "none" and kind == "calendar_block":
         problems.append("block on a no-change day")
+    needs_block = ft == "prioritize_sleep" or (ft in ("go_hard", "recover_between") and cons.get("free_windows"))
+    if needs_block and kind != "calendar_block":
+        problems.append("missing calendar block")
 
     if problems:
         return None, sorted(set(problems))

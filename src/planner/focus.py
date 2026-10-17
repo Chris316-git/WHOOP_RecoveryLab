@@ -160,7 +160,10 @@ def _lower_intensity(summary: dict, sig: dict, free: list[dict], bedtime: int, h
         c.add(0.2, f"you are behind on sleep this week ({_hm(sleep['shortfall_min'])} over "
                    f"{sleep['nights_measured']} nights)")
     act = easy_activity(habits)
-    c.block = find_slot(free, act["minutes"], latest_end=bedtime - EASY_MIN_BEFORE_BED,
+    latest = bedtime - EASY_MIN_BEFORE_BED
+    if act.get("latest_end") is not None:
+        latest = min(latest, act["latest_end"])
+    c.block = find_slot(free, act["minutes"], latest_end=latest,
                         prefer=act["prefer"] or (PREFERRED_START, PREFERRED_END))
     if c.block:
         c.block["title"] = act["title"]

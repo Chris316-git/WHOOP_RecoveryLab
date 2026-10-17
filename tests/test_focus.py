@@ -168,3 +168,12 @@ def test_slots_start_on_the_quarter_hour():
     assert find_slot([dict(start="15:16", end="24:00", minutes=524)], 30, prefer=(19 * 60 - 1, 20 * 60))["start"] \
         == "19:00"
     assert find_slot([dict(start="15:16", end="16:00", minutes=44)], 30, prefer=None)["start"] == "15:30"
+
+
+def test_walks_go_into_free_afternoon_time_and_never_late():
+    sig = {"load": dict(ratio=1.55, consecutive_hard_days=3, level="very_high")}
+    late_only = [dict(start="20:00", end="24:00", minutes=240)]
+    f = choose_focus(summary(signals=sig, free=late_only), EMPTY, TODAY)
+    assert f["focus"] == "lower_intensity" and f["block"] is None             # nothing before 20:00: no walk
+    f = choose_focus(summary(signals=sig, free=[dict(start="13:00", end="24:00", minutes=660)]), EMPTY, TODAY)
+    assert f["block"]["start"] == "16:00" and f["block"]["end"] == "16:30"

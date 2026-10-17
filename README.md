@@ -98,6 +98,7 @@ make settings ARGS="--latest 12:00"    # send by then even if sleep is not score
 make settings ARGS="--no-wait"         # send at --time without waiting for the score
 make settings ARGS="--off"             # pause (use --on to resume)
 make settings ARGS="--tz Asia/Shanghai"  # pick a time zone; "--tz auto" follows Google Calendar
+make settings ARGS="--sports golf,running"  # activities to suggest; "auto" learns them from your workouts
 ```
 
 `make daily-now` sends immediately; `make report-preview` builds the report into

@@ -18,7 +18,7 @@ def test_categories():
 
 def test_profile_learns_activity_duration_and_local_time():
     rows = [workout(d, "running", 14, 50, 12.0) for d in (2, 5, 9, 12, 16)]       # 07:00 local (UTC-7)
-    rows += [workout(d, "weightlifting", 1, 60, 9.0) for d in (3, 10)]            # only twice: not a habit
+    rows += [workout(3, "weightlifting", 1, 60, 9.0)]                             # only once: not a habit
     rows += [workout(d, "Activity", 15, 30, 5.0) for d in (1, 4, 8)]              # generic: ignored
     rows += [workout(70, "running", 14, 50, 12.0)]                                # too old
     p = activity_profile(rows, TODAY)
@@ -43,3 +43,25 @@ def test_no_history_falls_back_to_generic_blocks():
     assert activity_profile([], TODAY) is None
     assert easy_activity(None)["title"] == "Easy movement: walk or mobility"
     assert hard_activity(None)["minutes"] == 60
+
+
+def test_walking_is_not_your_sport_and_does_not_set_the_time():
+    rows = [workout(d, "walking", 2, 40, 6.0) for d in range(1, 15)]          # many (often automatic) walks
+    rows += [workout(d, "golf", 18, 240, 11.0) for d in (2, 9)]               # two rounds, 11:00 local
+    p = activity_profile(rows, TODAY)
+    easy, hard = easy_activity(p), hard_activity(p)
+    assert easy["title"] == "Golf: range or short-game practice" and easy["minutes"] == 45
+    assert hard["title"] == "Golf: a full round" and hard["minutes"] == 240
+    walks_only = activity_profile([workout(d, "walking", 2, 40, 6.0) for d in range(1, 6)], TODAY)
+    walk = easy_activity(walks_only)
+    assert walk["prefer"] is None and walk["latest_end"] == 20 * 60           # afternoon, never late
+
+
+def test_listed_activities_come_first_and_time_is_learned():
+    rows = [workout(d, "running", 14, 50, 12.0) for d in (2, 5, 9, 12)]       # 07:00 local
+    rows += [workout(d, "yoga", 1, 45, 3.0) for d in (3, 10)]                 # 18:00 local
+    p = activity_profile(rows, TODAY, preferred_sports=["yoga"])
+    easy = easy_activity(p)
+    assert easy["title"] == "Yoga, as usual" and easy["prefer"] == (17 * 60 + 30, 19 * 60)
+    assert "You listed yoga" in easy["basis"] and "18:00" in easy["basis"]
+    assert hard_activity(p)["title"].startswith("Hard running")              # yoga is never the hard session

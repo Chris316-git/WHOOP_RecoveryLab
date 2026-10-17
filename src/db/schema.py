@@ -11,6 +11,7 @@ from src.db.models import Base
 ADDED_COLUMNS = [
     ("user_settings", "timezone", "VARCHAR(64)"),
     ("user_settings", "rl_calendar_id", "VARCHAR(255)"),
+    ("user_settings", "sports", "VARCHAR(255)"),
     ("daily_plans", "timezone", "VARCHAR(64)"),
     ("daily_plans", "final_block", "JSONB"),
     ("daily_plans", "event_id", "VARCHAR(255)"),

@@ -7,6 +7,8 @@
     make settings ARGS="--off"                     # pause daily emails (--on to resume)
     make settings ARGS="--tz Asia/Shanghai"        # use this time zone (IANA name)
     make settings ARGS="--tz auto"                 # follow your Google Calendar time zone (default)
+    make settings ARGS="--sports golf,running"     # activities to suggest, in order of preference
+    make settings ARGS="--sports auto"             # learn them from your workouts (default)
 """
 import argparse
 import sys
@@ -19,6 +21,7 @@ from src.db.schema import ensure_schema
 from src.db.session import SessionLocal, engine
 from src.db.upsert import upsert
 from src.ingestion.token_store import get_whoop_store
+from src.planner.habits import parse_sports
 from src.report.schedule import ReportSchedule, parse_hhmm, resolve_timezone, validate_timezone
 
 
@@ -34,6 +37,7 @@ def main() -> None:
     onoff = parser.add_mutually_exclusive_group()
     onoff.add_argument("--on", dest="enabled", action="store_true", default=None)
     onoff.add_argument("--off", dest="enabled", action="store_false")
+    parser.add_argument("--sports", help='activities to suggest, e.g. "golf,running", or "auto"')
     parser.add_argument("--resend", action="store_true",
                         help="forget that today's report was sent, so the scheduled job sends it again")
     args = parser.parse_args()
@@ -57,6 +61,8 @@ def main() -> None:
         changes["wait_for_sleep"] = args.wait
     if args.enabled is not None:
         changes["report_enabled"] = args.enabled
+    if args.sports:
+        changes["sports"] = None if args.sports.strip().lower() == "auto" else ",".join(parse_sports(args.sports))
     if args.resend:
         changes["last_report_on"] = None
 
@@ -81,6 +87,8 @@ def main() -> None:
     else:
         print(f"  Sent shortly after {s.report_time:%H:%M}.")
     print("  The job checks every 30 minutes, and GitHub can start runs a few minutes late.")
+    sports = row.sports if row and row.sports else "learned from your workouts"
+    print(f"Suggested activities: {sports}, placed near the time you usually do them")
     if s.last_report_on:
         print(f"  Last sent: {s.last_report_on}")
 

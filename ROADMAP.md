@@ -210,6 +210,15 @@ numbers behind it in `outcome_detail`.
 
 ## Phase 4: Personal experiment engine
 
+**Status: v0.1 done** (`src/experiments/`). Deliberately simple and checkable: one preset
+("no screens 30 minutes before bed", outcome sleep performance), randomized paired nights,
+adherence from a one-tap answer (not inferred from the wearable), and a randomization test
+with a t-interval, validated by simulation (about 5% false positives, about 95% coverage;
+with 7 pairs, power is low for small effects, so "inconclusive" is common and honest).
+The original ABAB plus Bayesian AR(1) design stays on the shelf until v0.1 has run end to end.
+Next: AI-proposed hypotheses and plain-language explanations (statistics stay in code), more
+presets, and extending an experiment when the interval is still too wide.
+
 Goal: a user asks something like "Will skipping coffee after 2pm improve my sleep?" and gets a
 sound plan, guided execution and an honest answer.
 

@@ -126,6 +126,20 @@ def render_text(summary: dict, notices: list[str]) -> str:
         if f.get("caveat"):
             lines.append(f"  {f['caveat']}")
         lines.append("")
+    x = summary.get("experiment")
+    if x:
+        night = f" (night {x['night']} of {x['nights']})" if x.get("night") else ""
+        lines.append(f"EXPERIMENT: {x['title']}{night}")
+        if x.get("tonight"):
+            lines.append(f"  {x['tonight']}")
+        if x.get("ask"):
+            lines.append(f"  {x['ask']['question']}")
+            for k, label in (("adhere_yes", "Yes"), ("adhere_no", "No")):
+                if (x.get("links") or {}).get(k):
+                    lines.append(f"  {label}: {x['links'][k]}")
+        if x.get("done"):
+            lines.append(f"  Result: {x['explanation']}")
+        lines.append("")
     if not summary["last_night_scored"]:
         lines.append("Last night's sleep is not scored yet (or WHOOP was not worn).")
     lines.append("Last night")
@@ -469,6 +483,48 @@ def _yesterday(summary: dict) -> str:
                  f'font-weight:600">Yesterday</span>&nbsp; {escape(text)}</td></tr></table>', pad="14px 18px")
 
 
+VERDICT_LABEL = {"helped": ("It helped", GOOD), "worse": ("It made things worse", BAD),
+                 "no_meaningful_effect": ("No meaningful effect", MUTED), "inconclusive": ("Inconclusive", MUTED),
+                 "not_enough_data": ("Not enough data", MUTED)}
+
+
+def _experiment(summary: dict) -> str:
+    """The active experiment: tonight's assignment, last night's one-tap question, or the result."""
+    x = summary.get("experiment")
+    if not x:
+        return ""
+    head = f"Experiment · night {x['night']} of {x['nights']}" if x.get("night") else "Experiment"
+    parts = [f'<div style="font-size:17px;font-weight:600;color:{INK}">{escape(x["title"])}</div>']
+    if x.get("tonight"):
+        parts.append(f'<div style="font-size:14px;color:{INK_2};margin-top:6px;line-height:1.45">'
+                     f'{escape(x["tonight"])}</div>')
+    ask, links = x.get("ask"), x.get("links") or {}
+    if ask:
+        hint = (f'<div style="font-size:12px;color:{MUTED};margin-top:4px">{escape(ask["hint"])}</div>'
+                if ask.get("hint") else "")
+        buttons = ""
+        if links:
+            buttons = "".join(
+                f'<td style="padding:0 8px 0 0"><a href="{escape(links[k])}" style="display:inline-block;'
+                f'background:{CARD};color:{INK};border:1px solid {LINE};border-radius:10px;padding:8px 14px;'
+                f'font-size:14px;font-weight:600;text-decoration:none">{label}</a></td>'
+                for k, label in (("adhere_yes", "Yes"), ("adhere_no", "No")))
+            buttons = (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px">'
+                       f'<tr>{buttons}</tr></table>')
+        parts.append(f'<div style="font-size:14px;color:{INK};margin-top:12px">{escape(ask["question"])}</div>'
+                     f'{hint}{buttons}')
+    if x.get("done"):
+        verdict = x["result"]["primary"]["itt"]["verdict"]
+        label, color = VERDICT_LABEL[verdict]
+        parts.append(f'<div style="margin-top:12px;font-size:15px;font-weight:600;color:{color}">'
+                     f'Result: {label}</div>'
+                     f'<div style="font-size:14px;color:{INK_2};margin-top:4px;line-height:1.5">'
+                     f'{escape(x["explanation"])}</div>')
+    elif x.get("waiting"):
+        parts.append(f'<div style="font-size:13px;color:{MUTED};margin-top:10px">{escape(x["waiting"])}</div>')
+    return _card(_title(head) + "".join(parts))
+
+
 def render_html(summary: dict, notices: list[str]) -> str:
     notice_html = "".join(
         f'<tr><td style="padding:0 0 12px"><div style="background:#fef3d6;border:1px solid #f7d58a;'
@@ -485,7 +541,8 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'you feel. The focus is chosen by {chosen_by}, not by '
               f'experiment results; a single day cannot show what caused what. Not medical advice. '
               f'Change the delivery time with <code>make settings</code>.</td></tr>')
-    content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _body(summary)
+    content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _experiment(summary)
+               + _body(summary)
                + _today(summary) + footer)
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'

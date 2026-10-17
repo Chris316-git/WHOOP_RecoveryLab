@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from src.actions.options import slot_options
 from src.actions.tokens import ActionToken
-from src.db.models import DailyPlan, UserSettings
+from src.db.models import DailyPlan, Experiment, ExperimentDay, UserSettings
 from src.planner.focus import TITLES
 from src.report.daily import free_windows
 from src.report.data import load_events_for_day
@@ -210,3 +210,26 @@ class ActionService:
             self._save(token, response=None)
             return Outcome("undone", "Undone. Today's suggestion is open again.")
         return Outcome("nothing", "Nothing to undo.")
+
+    # ---- experiments ----
+    def adhere(self, token: ActionToken, yes: bool) -> Outcome:
+        """Record the user's answer for one experiment night. Answering again overwrites it."""
+        from sqlalchemy import select
+
+        with self.session_factory() as session:
+            experiments = session.scalars(select(Experiment).where(Experiment.user_id == token.user_id)
+                                          .order_by(Experiment.id.desc()))
+            exp = next((e for e in experiments if any(s["day"] == token.day.isoformat() for s in e.schedule)), None)
+            if exp is None:
+                raise PlanNotFound("No experiment found for this link.")
+            if exp.status != "active":
+                return Outcome("already", "This experiment has already ended.")
+            row = session.get(ExperimentDay, (exp.id, token.day))
+            if row is None:
+                row = ExperimentDay(experiment_id=exp.id, day=token.day)
+                session.add(row)
+            row.adherence, row.answered_at = ("yes" if yes else "no"), self.clock()
+            session.commit()
+        if yes:
+            return Outcome("recorded", "Noted: you kept to the plan last night. Thanks.")
+        return Outcome("recorded", "Noted: not last night. That is useful too; the analysis accounts for it.")

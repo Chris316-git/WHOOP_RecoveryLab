@@ -147,6 +147,8 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
         action_text = str(action.get("title") or "").lower()
         if ft == "go_hard" or any(w in action_text for w in HARD_WORDS):
             problems.append("hard session against the data")
+    if cons.get("experiment_tonight") == "control" and "screen" in lowered:
+        problems.append("conflicts with experiment")
     if ft == "none" and kind == "calendar_block":
         problems.append("block on a no-change day")
     needs_block = ft == "prioritize_sleep" or (ft in ("go_hard", "recover_between") and cons.get("free_windows"))

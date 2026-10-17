@@ -12,6 +12,8 @@ from src.db.models import (
     Cycle,
     DailyCalendarFeatures,
     DailyPlan,
+    Experiment,
+    ExperimentDay,
     Recovery,
     Sleep,
     Workout,
@@ -97,3 +99,14 @@ def load_recent_plans(session: Session, user_id: int, today: date, days: int = 7
     return [dict(day=p.day.isoformat(), focus=p.focus, title=p.title, block=p.block, final_block=p.final_block,
                  response=p.response, calendar_status=p.calendar_status, outcome=p.outcome,
                  outcome_detail=p.outcome_detail) for p in rows]
+
+
+def load_active_experiment(session: Session, user_id: int) -> tuple[dict, dict[str, str]] | None:
+    """The user's active experiment and its confirmed adherence by day, or None."""
+    e = session.scalars(select(Experiment).where(Experiment.user_id == user_id, Experiment.status == "active")
+                        .order_by(Experiment.id.desc())).first()
+    if e is None:
+        return None
+    days = session.scalars(select(ExperimentDay).where(ExperimentDay.experiment_id == e.id))
+    exp = dict(id=e.id, preset=e.preset, nights=e.nights, schedule=e.schedule, start_day=e.start_day.isoformat())
+    return exp, {d.day.isoformat(): d.adherence for d in days if d.adherence}

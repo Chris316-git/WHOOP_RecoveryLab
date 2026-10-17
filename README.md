@@ -45,7 +45,8 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] AI reasoning engine (optional): Claude decides the focus and designs the action from a numbered evidence file, a code validator checks every claim, the rule engine is the fallback, and both are stored for evaluation
 - [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
 - [ ] Feedback loop, the rest: did it help, over many days?
-- [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
+- [x] Personal experiment engine v0.1: one preset, randomized paired nights, one-tap adherence, randomization test
+- [ ] Experiments, next: more presets, AI-proposed hypotheses and explanations, data-driven length
 - [ ] Adaptive personalization: structured AI memory computed in code
 - [ ] Hosted multi-user web app
 
@@ -163,6 +164,29 @@ engine, within limits enforced in code:
 `REASONING_MODE=shadow` keeps showing the rules' plan while still recording the AI's, and
 `REASONING_MODE=off` disables it. The calendar is still only written when you tap the button.
 
+## Personal experiments (v0.1)
+
+WHOOP can show that a habit and your recovery move together. An experiment asks whether the
+habit actually changes things *for you*:
+
+```bash
+uv run python scripts/experiment.py list
+uv run python scripts/experiment.py start screens_off_30     # 14 nights, starts tonight
+uv run python scripts/experiment.py status
+```
+
+* **Design** (`src/experiments/design.py`): nights in pairs, a seeded coin decides which night of
+  each pair is the treatment night. Tonight's assignment appears in the morning email.
+* **Adherence** is your one-tap Yes/No the next morning. Wearable data is shown only as a hint,
+  never as proof, and never doubles as the outcome.
+* **Analysis** (`src/experiments/analysis.py`): mean pair difference in the pre-specified outcome
+  (sleep performance for the first preset), a randomization test and a 95% t-interval, as
+  assigned (primary) and per protocol. Verdicts are pre-specified: helped, worse, no
+  meaningful effect, inconclusive, or not enough data. A simulation test checks the method on
+  autocorrelated synthetic nights: about 5% false positives and about 95% interval coverage.
+* While an experiment runs, neither the rule engine nor the AI may contradict tonight's
+  assignment.
+
 ## Project layout
 
 ```
@@ -179,6 +203,7 @@ src/
   notify/      Email delivery
   settings.py  Runtime settings as one immutable object (from .env / environment)
   actions/     Add to calendar / Change time / Dismiss / Undo: signed links, calendar writes, pages
+  experiments/ Personal experiments: presets, randomized schedule, analysis, the email card
   reasoning/   AI reasoning engine: evidence builder, LLM call, safety validator, evaluation report
   llm/         Claude API helper and the wording fallback for rule-based plans
   api/         FastAPI app: WHOOP login flow and the action endpoint

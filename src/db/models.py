@@ -230,3 +230,33 @@ class DailyPlan(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ---------------- Experiments (Phase 4, v0.1) ----------------
+
+class Experiment(Base):
+    """One personal experiment: a preset intervention, a randomized night-by-night schedule and,
+    once finished, the analysis result. One active experiment per user at a time."""
+    __tablename__ = "experiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    preset: Mapped[str] = mapped_column(String(48))
+    start_day: Mapped[date] = mapped_column(Date)                  # first experiment night (local date)
+    nights: Mapped[int] = mapped_column(Integer)
+    seed: Mapped[int] = mapped_column(BigInteger)                  # makes the random schedule reproducible
+    schedule: Mapped[list] = mapped_column(JSONB)                  # [{"day": "2026-10-18", "arm": "treatment"}, ...]
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | completed | stopped
+    result: Mapped[dict | None] = mapped_column(JSONB)             # analysis, written once at the end
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExperimentDay(Base):
+    """What the user confirmed for one experiment night. No row (or None) = not answered."""
+    __tablename__ = "experiment_days"
+
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    adherence: Mapped[str | None] = mapped_column(String(8))       # yes | no
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

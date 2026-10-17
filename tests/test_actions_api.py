@@ -127,3 +127,19 @@ def test_old_links_and_invalid_links(setup):
     assert client.get("/a/not-a-token").status_code == 400
     forged = "/a/" + sign(ActionToken(USER, DAY, "add", 4_000_000_000), "wrong-key")
     assert client.post(forged).status_code == 400
+
+
+def test_experiment_answer_is_recorded(setup):
+    from src.db.models import Experiment, ExperimentDay
+    from src.experiments.design import make_schedule
+    client, factory, _ = setup
+    with factory() as s:
+        s.add(Experiment(id=1, user_id=USER, preset="screens_off_30", start_day=DAY, nights=4, seed=1,
+                         schedule=make_schedule(DAY, 4, 1), status="active"))
+        s.commit()
+    assert "Saving your answer" in client.get(link("adhere_yes")).text
+    r = client.post(link("adhere_yes"))
+    assert "Answer saved" in r.text
+    client.post(link("adhere_no"))                                  # changing the answer overwrites it
+    with factory() as s:
+        assert s.get(ExperimentDay, (1, DAY)).adherence == "no"

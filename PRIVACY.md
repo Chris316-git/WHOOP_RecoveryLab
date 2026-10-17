@@ -58,6 +58,12 @@ partly, not done) with those few numbers. Nothing new is collected for this.
 These records are used only to make future suggestions fit you better. The links in the email
 are signed and expire, and they contain no health data.
 
+### Experiments
+
+If you start an experiment, Recovery Lab stores its randomized schedule (which nights are
+treatment and comparison nights), your Yes/No answer for each treatment night, and the final
+analysis (an effect estimate, interval and verdict). Outcomes are read from data already stored.
+
 ### Information you enter (planned)
 
 The experiment features that are planned will store short daily check-ins (for example the

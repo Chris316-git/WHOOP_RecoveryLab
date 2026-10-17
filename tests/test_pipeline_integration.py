@@ -185,3 +185,17 @@ def test_rejected_ai_plan_falls_back_to_the_rules(factory):
     with factory() as s:
         plan = s.get(DailyPlan, (USER, TODAY))
         assert plan.engine == "rules" and plan.ai_status == "rejected" and plan.ai_problems == ["numbers"]
+
+
+def test_active_experiment_appears_in_the_email(factory):
+    from src.db.models import Experiment
+    from src.experiments.design import make_schedule
+    start = TODAY - timedelta(days=2)
+    with factory() as s:
+        s.add(Experiment(user_id=USER, preset="screens_off_30", start_day=start, nights=4, seed=5,
+                         schedule=make_schedule(start, 4, 5), status="active"))
+        s.commit()
+    outbox = []
+    make_pipeline(factory, outbox).run_user(str(USER), mode="now")
+    html, text = outbox[0][2], outbox[0][3]
+    assert "No screens 30 minutes before bed" in html and "night 3 of 4" in text.lower()

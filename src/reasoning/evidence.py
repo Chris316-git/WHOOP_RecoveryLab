@@ -138,6 +138,11 @@ def build_case(summary: dict, panel: pd.DataFrame, today: date, now: datetime | 
     if recent_plans and all(p.get("focus") in (None, "none") for p in recent_plans):
         add("history", "No suggestions were made in the last 7 days (nothing needed to change).")
 
+    x = summary.get("experiment") or {}
+    if x.get("arm"):
+        add("experiment", f"An experiment is running: \"{x['title']}\", night {x['night']} of {x['nights']}. "
+                          + x["tonight"] + " Do not suggest anything that changes tonight's assignment.")
+
     evidence = [dict(id=f"E{i}", topic=topic, text=text) for i, (topic, text) in enumerate(items, 1)]
     return dict(
         date=today.isoformat(),
@@ -150,5 +155,6 @@ def build_case(summary: dict, panel: pd.DataFrame, today: date, now: datetime | 
             default_target_bedtime=_clock(max(EARLIEST_TARGET_BEDTIME, (bedtime or DEFAULT_BEDTIME) - 30)),
             free_windows=(cal or {}).get("free_windows") if cal else None,
             hard_session_allowed=not blockers,
+            experiment_tonight=x.get("arm"),   # "treatment" | "control" | None
         ),
     )

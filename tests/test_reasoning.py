@@ -132,3 +132,11 @@ def test_wind_down_after_midnight_is_tonight():
                action=dict(type="calendar_block", title="Wind down", start="00:10", minutes=40)))
     assert r["status"] == "ok", r["problems"]
     assert r["focus"]["block"]["start"] == "00:10" and r["focus"]["block"]["end"] == "00:50"
+
+
+def test_ai_must_not_contradict_a_control_night():
+    s, case = setup()
+    case["constraints"]["experiment_tonight"] = "control"
+    out = ai(action=dict(type="calendar_block", title="Wind down: screens off", start="22:40", minutes=40))
+    r = reason(case, s, "key", call=lambda *a: json.dumps(out))
+    assert r["status"] == "rejected" and "conflicts with experiment" in r["problems"]

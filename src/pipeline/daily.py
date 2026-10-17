@@ -14,13 +14,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from src.db.models import DailyPlan, User, UserSettings
+from src.db.models import DailyPlan, Experiment, User, UserSettings
 from src.db.upsert import upsert
 from src.feedback.outcome import evaluate
 from src.planner.focus import TITLES
 from src.planner.habits import activity_profile, parse_sports
 from src.report.daily import build_daily_summary
 from src.report.data import (
+    load_active_experiment,
     load_events_for_day,
     load_not_useful,
     load_plan,
@@ -123,6 +124,7 @@ class DailyPipeline:
                                       preferred_sports=parse_sports(prefs.sports if prefs else None))
             plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
             history = load_recent_plans(session, uid, today)
+            active = load_active_experiment(session, uid)
         summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted,
                                       habits=habits)
         # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
@@ -137,6 +139,14 @@ class DailyPipeline:
             if review:
                 summary["reviews"][k] = review
         summary["yesterday"] = summary["reviews"].get(1)
+        if active:
+            from src.experiments.daily import experiment_today
+            from src.planner.focus import usual_bedtime
+            exp, adherence = active
+            summary["experiment"] = experiment_today(exp, adherence, panel, today, usual_bedtime(panel, today))
+            block = summary["focus"].get("block")
+            if summary["experiment"].get("arm") == "control" and block and "screen" in block["title"].lower():
+                block["title"] = "Wind down: lights low, slow down"   # never contradict tonight's assignment
         from src.reasoning.evidence import build_case
         summary["reasoning_case"] = build_case(summary, panel, today, now, habits, history)
         return summary
@@ -246,6 +256,32 @@ class DailyPipeline:
         except Exception:
             pass
 
+    def save_experiment_result(self, user_id: str, summary: dict) -> None:
+        """Store the analysis once, when an experiment has finished."""
+        info = summary.get("experiment") or {}
+        if not info.get("done"):
+            return
+        with self.session_factory() as session:
+            e = session.get(Experiment, info["id"])
+            if e is not None and e.status == "active":
+                e.status, e.result, e.ended_at = "completed", info["result"], datetime.now(timezone.utc)
+                session.commit()
+
+    def experiment_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
+        """Signed one-tap Yes / No links for last night's adherence question (valid ~2 days)."""
+        ask = (summary.get("experiment") or {}).get("ask")
+        if not (self.settings.actions_enabled and ask):
+            return None
+        from datetime import date as _date
+        from datetime import time
+
+        from src.actions.tokens import ActionToken, sign
+        expires = int(datetime.combine(now.date() + timedelta(days=2), time(6), now.tzinfo).timestamp())
+        day = _date.fromisoformat(ask["day"])
+        base, key = self.settings.public_base_url, self.settings.action_signing_key
+        return {a: f"{base}/a/{sign(ActionToken(int(user_id), day, a, expires), key)}"
+                for a in ("adhere_yes", "adhere_no")}
+
     def action_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
         """Signed links, valid until 06:00 the next morning. Add to calendar / Change time /
         Dismiss only when a time block actually helps; otherwise just a quiet "Not useful?"."""
@@ -294,6 +330,11 @@ class DailyPipeline:
             return run
         status = self.save_plan(user_id, summary, now, tz)
         self.save_outcome(user_id, summary, now)
+        self.save_experiment_result(user_id, summary)
+        if summary.get("experiment"):
+            summary["experiment"]["links"] = self.experiment_links(user_id, summary, now)
+            if summary["experiment"]["links"] and not summary.get("actions"):
+                self.warm_up()
         if status == "open":
             summary["actions"] = self.action_links(user_id, summary, now)
             if summary["actions"]:

@@ -60,7 +60,8 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 
 # ---------------- Add to calendar / Change time / Dismiss ----------------
 
-RESULT_TITLES = {"added": "Added to your calendar", "moved": "Time changed", "dismissed": "Dismissed",
+RESULT_TITLES = {"recorded": "Answer saved", "added": "Added to your calendar", "moved": "Time changed",
+                 "dismissed": "Dismissed",
                  "not_useful": "Thanks for the feedback", "undone": "Undone", "already": "Already done",
                  "nothing": "Nothing to do"}
 
@@ -122,11 +123,14 @@ def action_page(token: str, request: Request):
     service, key, t, error = _verify(request, token)
     if error:
         return error
+    url = f"/a/{token}"
+    if t.action in ("adhere_yes", "adhere_no"):   # experiment answers do not depend on a daily plan
+        label = "Yes, I did" if t.action == "adhere_yes" else "No, not last night"
+        return _no_store(HTMLResponse(pages.one_tap(url, "Saving your answer…", label)))
     try:
         plan = service.plan(t)
     except PlanNotFound as exc:
         return HTMLResponse(pages.done("Not found", str(exc)), status_code=404)
-    url = f"/a/{token}"
     if t.action == "add":
         if not plan["block"]:
             return _no_store(HTMLResponse(pages.done("Nothing to schedule", "Today's suggestion has no time block.")))
@@ -152,7 +156,9 @@ def action_submit(token: str, request: Request, choice: int | None = None):
     if error:
         return error
     try:
-        if t.action == "add":
+        if t.action in ("adhere_yes", "adhere_no"):
+            outcome = service.adhere(t, t.action == "adhere_yes")
+        elif t.action == "add":
             outcome = service.add(t)
         elif t.action == "change":
             outcome = service.change(t, -1 if choice is None else choice)

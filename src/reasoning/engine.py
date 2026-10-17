@@ -41,6 +41,8 @@ Hard rules (a reply that breaks any of them is discarded):
   closes), except a "prioritize_sleep" wind-down, which ends at the target bedtime in the evening. Times are 24-hour.
   If free_windows is null, use action type "guidance" instead of "calendar_block".
 - No diagnoses, no medication, supplements or diet advice, no alarm. Not medical advice.
+- If constraints.experiment_tonight is set, respect the experiment: on a "control" night do not mention screens
+  or suggest the experiment's habit; on a "treatment" night do not contradict it.
 
 Reply with JSON only, exactly this shape:
 {

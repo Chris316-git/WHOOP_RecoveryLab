@@ -20,6 +20,9 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from src.planner.habits import easy_activity, hard_activity
+from src.report.signals import HARD_STRAIN
+
 THRESHOLD = 0.45
 PRIORITY = ["lower_intensity", "prioritize_sleep", "recover_between", "go_hard"]
 
@@ -99,23 +102,26 @@ def find_slot(free_windows: list[dict], minutes: int, latest_end: int | None = N
               prefer: tuple[int, int] | None = (PREFERRED_START, PREFERRED_END)) -> dict | None:
     """A slot of `minutes` inside a free window, ending by `latest_end` (minutes after midnight).
 
-    Prefers a start inside `prefer`; otherwise the earliest start that fits.
+    Picks the start closest to the `prefer` range (your usual workout time, or late afternoon
+    by default); among equally close options, the earliest.
     """
-    options = []
+    lo, hi = prefer if prefer else (0, 0)
+    best = None
     for w in free_windows:
         s, e = _to_min(w["start"]), _to_min(w["end"])
         if latest_end is not None:
             e = min(e, latest_end)
         if e - s < minutes:
             continue
-        start = s
-        if prefer and s < prefer[0] <= e - minutes:
-            start = prefer[0]
-        options.append(start)
-    if not options:
+        start = min(max(s, lo), e - minutes) if prefer else s   # as close to the preferred range as fits
+        distance = 0 if lo <= start <= hi else min(abs(start - lo), abs(start - hi))
+        if prefer is None:
+            distance = start
+        if best is None or (distance, start) < best:
+            best = (distance, start)
+    if best is None:
         return None
-    inside = [o for o in options if prefer and prefer[0] <= o <= prefer[1]]
-    start = min(inside) if inside else min(options)
+    start = best[1]
     return dict(start=_to_hhmm(start), end=_to_hhmm(start + minutes), minutes=minutes)
 
 
@@ -125,9 +131,9 @@ def _metric(summary: dict, key: str) -> dict:
     return next((m for m in summary["metrics"] if m["key"] == key), {})
 
 
-def _lower_intensity(summary: dict, sig: dict, free: list[dict], bedtime: int) -> Candidate:
+def _lower_intensity(summary: dict, sig: dict, free: list[dict], bedtime: int, habits: dict | None = None) -> Candidate:
     c = Candidate("lower_intensity")
-    load, hrv, rhr = sig.get("load"), sig.get("hrv"), sig.get("resting_hr")
+    load, hrv, rhr, sleep = sig.get("load"), sig.get("hrv"), sig.get("resting_hr"), sig.get("sleep")
     if summary["recovery_zone"] == "red":
         c.add(0.6, f"recovery is {summary['metrics'][0]['value']:g}%, in the red zone")
     if load:
@@ -136,6 +142,8 @@ def _lower_intensity(summary: dict, sig: dict, free: list[dict], bedtime: int) -
                   f"training load is {load['ratio']:g}x your 4-week average")
         if load["consecutive_hard_days"] >= 2:
             c.add(0.2 * load["consecutive_hard_days"], f"{load['consecutive_hard_days']} hard days in a row")
+        elif load.get("yesterday_load") is not None and load["yesterday_load"] >= HARD_STRAIN:
+            c.add(0.2, f"yesterday was a hard day (strain {load['yesterday_load']:g})")
     if hrv and hrv["status"] == "below":
         c.add(0.4, f"HRV has been below your normal range this week ({hrv['recent_mean']:g} ms "
                    f"vs {hrv['normal_low']:g}-{hrv['normal_high']:g})")
@@ -143,10 +151,21 @@ def _lower_intensity(summary: dict, sig: dict, free: list[dict], bedtime: int) -
         c.add(0.3, f"resting heart rate is above your normal range this week ({rhr['recent_mean']:g} bpm)")
     if _metric(summary, "hrv_rmssd_milli").get("status") == "worse":
         c.add(0.2, "last night's HRV was low for you")
-    c.block = find_slot(free, 30, latest_end=bedtime - EASY_MIN_BEFORE_BED)
+    if sleep and sleep["shortfall_min"] / max(1, sleep["nights_measured"]) >= 60:
+        c.add(0.2, f"you are behind on sleep this week ({_hm(sleep['shortfall_min'])} over "
+                   f"{sleep['nights_measured']} nights)")
+    act = easy_activity(habits)
+    c.block = find_slot(free, act["minutes"], latest_end=bedtime - EASY_MIN_BEFORE_BED,
+                        prefer=act["prefer"] or (PREFERRED_START, PREFERRED_END))
     if c.block:
-        c.block["title"] = "Easy movement: walk or mobility"
+        c.block["title"] = act["title"]
+        c.note = act["basis"]
     return c
+
+
+def _hm(minutes: float) -> str:
+    minutes = int(round(minutes))
+    return f"{minutes // 60}h {minutes % 60:02d}m"
 
 
 def _prioritize_sleep(summary: dict, sig: dict, bedtime: int, target_bedtime: int) -> Candidate:
@@ -165,11 +184,14 @@ def _prioritize_sleep(summary: dict, sig: dict, bedtime: int, target_bedtime: in
                 c.add(weight * min(1.0, 0.3 + excess / 240 * 0.5), f"you are {text}, more than your usual week")
         elif short7 >= 120:
             c.add(weight * min(1.0, 0.3 + (short7 - 120) / 240 * 0.5), f"you are {text}")
-        if short7 >= 7 * 60:  # about an hour short per night on average
-            c.add(weight * 0.3, "you have averaged about an hour or more below your need per night")
+        if short7 >= 7 * 60:  # an hour or more short per night: a problem even if it is your usual
+            c.add(weight * min(0.6, 0.3 + (short7 - 420) / 420 * 0.3),
+                  f"you have averaged {_hm(short7 / 7)} below your need per night")
     last = _metric(summary, "total_sleep_min")
     if last.get("delta") is not None and last["delta"] <= -60:
         c.add(0.35, f"last night was {abs(last['delta']):.0f} min shorter than usual")
+    elif last.get("delta") is not None and last["delta"] <= -30:
+        c.add(0.2, f"last night was {abs(last['delta']):.0f} min shorter than usual")
     if wd:
         c.add(0.25, f"{wd['weekday']} is usually a short night for you")
     start = target_bedtime - WIND_DOWN_MIN
@@ -215,7 +237,7 @@ def hard_day_blockers(summary: dict, sig: dict) -> list[str]:
     return out
 
 
-def _go_hard(summary: dict, sig: dict, free: list[dict], bedtime: int) -> Candidate:
+def _go_hard(summary: dict, sig: dict, free: list[dict], bedtime: int, habits: dict | None = None) -> Candidate:
     c = Candidate("go_hard")
     load, hrv = sig.get("load") or {}, sig.get("hrv") or {}
     if hard_day_blockers(summary, sig):
@@ -227,12 +249,15 @@ def _go_hard(summary: dict, sig: dict, free: list[dict], bedtime: int) -> Candid
         c.add(0.25, f"training load is light ({load['ratio']:g}x your 4-week average)")
     if hrv.get("status") == "above":
         c.add(0.15, "HRV is above your normal range this week")
-    c.block = find_slot(free, 60, latest_end=bedtime - HARD_MIN_BEFORE_BED)
+    act = hard_activity(habits)
+    c.block = find_slot(free, act["minutes"], latest_end=bedtime - HARD_MIN_BEFORE_BED,
+                        prefer=act["prefer"] or (PREFERRED_START, PREFERRED_END))
     if c.block:
-        c.block["title"] = "Hard session: intervals or heavy strength"
+        c.block["title"] = act["title"]
+        c.note = act["basis"]
     else:
         c.actionability = 0.3
-        c.note = "No free hour early enough today; consider tomorrow."
+        c.note = f"No free {act['minutes']} minutes early enough today; consider tomorrow."
     return c
 
 
@@ -313,7 +338,8 @@ NOT_USEFUL_DAMPING = 0.6  # the user said this kind of suggestion was not useful
 
 
 def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime | None = None,
-                 recent_focuses: list[str] | None = None, not_useful: set[str] | None = None) -> dict:
+                 recent_focuses: list[str] | None = None, not_useful: set[str] | None = None,
+                 habits: dict | None = None) -> dict:
     """The day's focus as a plain dict (stored, rendered and later sent to the LLM).
 
     `recent_focuses` are the focuses chosen on previous days, most recent first. Repeating the
@@ -322,6 +348,9 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
 
     `not_useful` are focuses the user explicitly marked "not useful" recently; they also need
     stronger evidence. Not responding is never treated as a rejection.
+
+    `habits` (src/planner/habits.py) turns the generic easy and hard blocks into versions of
+    the activities the user actually does, at their usual time.
     """
     sig = summary.get("signals") or {}
     free = (summary.get("calendar") or {}).get("free_windows") or []
@@ -335,10 +364,10 @@ def choose_focus(summary: dict, panel: pd.DataFrame, today: date, now: datetime 
                     schedulable=False)
 
     candidates = [
-        _lower_intensity(summary, sig, free, bedtime),
+        _lower_intensity(summary, sig, free, bedtime, habits),
         _prioritize_sleep(summary, sig, bedtime, target_bedtime),
         _recover_between(summary, sig, free),
-        _go_hard(summary, sig, free, bedtime),
+        _go_hard(summary, sig, free, bedtime, habits),
     ]
     recent = (recent_focuses or [])[:REPEAT_DAYS]
     for c in candidates:

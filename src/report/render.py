@@ -313,15 +313,18 @@ def _today(summary: dict) -> str:
             f'style="background:{FREE if seg["kind"] == "free" else BUSY};height:14px;font-size:0;line-height:0;'
             f'border-right:2px solid {CARD}">&nbsp;</td>'
             for seg in cal["timeline"])
-        ticks = "".join(f'<td width="25%" style="font-size:11px;color:{MUTED};padding-top:4px">{t}</td>'
-                        for t in ("08:00", "11:00", "14:00", "17:00"))
+        w_start, w_end = cal.get("window") or ("07:00", "24:00")
+        h0, h1 = int(w_start[:2]), int(w_end[:2])
+        marks = list(range(h0, h1, 4))
+        ticks = "".join(f'<td width="{min(4, h1 - h) / (h1 - h0) * 100:.1f}%" style="font-size:11px;color:{MUTED};'
+                        f'padding-top:4px">{h:02d}:00</td>' for h in marks)
         bar = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;'
                f'border-radius:6px;overflow:hidden"><tr>{segs}</tr></table>'
                f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{ticks}'
                f'</tr></table>'
                f'<div style="font-size:12px;color:{MUTED};margin-top:6px">'
                f'<span style="color:{FREE}">&#9632;</span> Free &nbsp; <span style="color:{BUSY}">&#9632;</span> Busy'
-               f' &nbsp;(08:00-20:00)</div>')
+               f' &nbsp;({w_start}-{w_end})</div>')
     pills = "".join(
         f'<span style="display:inline-block;margin:8px 6px 0 0;padding:4px 10px;border-radius:999px;'
         f'background:#eff6ff;color:{INK};font-size:13px">{w["start"]}-{w["end"]}</span>'

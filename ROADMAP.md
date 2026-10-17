@@ -130,8 +130,13 @@ by *how far today deviates from your baseline × whether you can act on it today
 - Every focus carries its reasons, generated from the numbers (e.g. "HRV below your 30-day
   range for 3 days; yesterday's strain 16.2").
 
-**2. Find time.** Use free windows from the real calendar. Hard sessions stay at least
-3 hours before the target bedtime. Respect the user's preferred hours and allowed days. If
+**2. Find time and the activity.** Use free windows from the real calendar, from 07:00 to
+midnight, placed as close as possible to the time you usually train. The activity comes from
+your last 8 weeks of WHOOP workouts (`src/planner/habits.py`): an easy day suggests an easy
+habit (e.g. yoga) or the easy version of your main activity ("easy running, conversational
+pace"), a hard day your usual hard session. With too little history it falls back to a walk.
+No exercise library: the rules only adjust intensity and duration per activity category.
+Hard sessions stay at least 3 hours before the target bedtime. Respect the user's preferred hours and allowed days. If
 nothing fits, offer a shorter version or suggest tomorrow. "Prioritize sleep" becomes a
 wind-down block that starts 45-60 minutes before the target bedtime (target wake time minus
 sleep need).

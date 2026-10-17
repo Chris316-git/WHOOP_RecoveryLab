@@ -15,7 +15,9 @@ from src.report.signals import compute_signals
 
 BASELINE_DAYS = 30
 MIN_BASELINE_NIGHTS = 7
-ACTIVE_START, ACTIVE_END = time(8, 0), time(20, 0)
+# Suggestions can go anywhere from early morning to midnight; the planner's own rules
+# (e.g. hard sessions end 3 h before bedtime) narrow this down.
+ACTIVE_START = time(7, 0)
 MIN_FREE_WINDOW_MIN = 30
 
 
@@ -65,12 +67,21 @@ def _metric_summary(m: ShownMetric, value, history: pd.Series) -> dict:
     return out
 
 
+def _window(day: date, zone: ZoneInfo) -> tuple[datetime, datetime]:
+    """The day's planning window: 07:00 to midnight, local time."""
+    return datetime.combine(day, ACTIVE_START, zone), datetime.combine(day + timedelta(days=1), time.min, zone)
+
+
+def _clock(dt: datetime, zone: ZoneInfo, day_end: datetime) -> str:
+    """HH:MM, with the end of the day written as 24:00 so times still sort correctly."""
+    return "24:00" if dt >= day_end else dt.astimezone(zone).strftime("%H:%M")
+
+
 def free_windows(events: list[dict], day: date, tz: str, now: datetime | None = None,
                  min_minutes: int = MIN_FREE_WINDOW_MIN) -> list[dict]:
-    """Gaps between busy blocks within 08:00-20:00 local time (from `now` onward if given)."""
+    """Gaps between busy blocks within 07:00-24:00 local time (from `now` onward if given)."""
     zone = ZoneInfo(tz)
-    win_start = datetime.combine(day, ACTIVE_START, zone)
-    win_end = datetime.combine(day, ACTIVE_END, zone)
+    win_start, win_end = _window(day, zone)
     if now is not None:
         win_start = max(win_start, now.astimezone(zone))
     busy = sorted((max(e["start"], win_start), min(e["end"], win_end)) for e in events)
@@ -83,7 +94,7 @@ def free_windows(events: list[dict], day: date, tz: str, now: datetime | None = 
         cursor = max(cursor, e)
     if (win_end - cursor).total_seconds() >= min_minutes * 60:
         windows.append((cursor, win_end))
-    return [dict(start=s.astimezone(zone).strftime("%H:%M"), end=e.astimezone(zone).strftime("%H:%M"),
+    return [dict(start=_clock(s, zone, win_end), end=_clock(e, zone, win_end),
                  minutes=int((e - s).total_seconds() // 60)) for s, e in windows]
 
 
@@ -103,9 +114,8 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
     busy_min = sum((e - s).total_seconds() / 60 for s, e in merged)
     windows = free_windows(events, day, tz, now)
 
-    # Busy/free segments across the active window (08:00-20:00), for the email timeline.
-    win_start = datetime.combine(day, ACTIVE_START, zone)
-    win_end = datetime.combine(day, ACTIVE_END, zone)
+    # Busy/free segments across the planning window (07:00-24:00), for the email timeline.
+    win_start, win_end = _window(day, zone)
     timeline, cursor = [], win_start
     for s, e in merged:
         s, e = max(s, win_start), min(e, win_end)
@@ -118,7 +128,7 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
     if cursor < win_end:
         timeline.append(("free", cursor, win_end))
     total = (win_end - win_start).total_seconds()
-    timeline = [dict(kind=k, start=a.astimezone(zone).strftime("%H:%M"), end=b.astimezone(zone).strftime("%H:%M"),
+    timeline = [dict(kind=k, start=_clock(a, zone, win_end), end=_clock(b, zone, win_end),
                      share=round((b - a).total_seconds() / total, 4)) for k, a, b in timeline]
     now_share = None
     if now is not None and win_start <= now.astimezone(zone) <= win_end:
@@ -128,17 +138,19 @@ def calendar_summary(events: list[dict], day: date, tz: str, now: datetime | Non
         meeting_count=sum(1 for e in events if e.get("attendee_count", 0) >= 2),
         busy_hours=round(busy_min / 60, 1),
         first_start=merged[0][0].astimezone(zone).strftime("%H:%M") if merged else None,
-        last_end=merged[-1][1].astimezone(zone).strftime("%H:%M") if merged else None,
+        last_end=_clock(merged[-1][1], zone, day_end) if merged else None,
         free_windows=windows,
         longest_free=max(windows, key=lambda w: w["minutes"]) if windows else None,
         timeline=timeline,
+        window=(ACTIVE_START.strftime("%H:%M"), "24:00"),
         now_share=now_share,
     )
 
 
 def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
                         events_today: list[dict] | None = None, now: datetime | None = None,
-                        recent_focuses: list[str] | None = None, not_useful: set[str] | None = None) -> dict:
+                        recent_focuses: list[str] | None = None, not_useful: set[str] | None = None,
+                        habits: dict | None = None) -> dict:
     """Summary for the morning of `today`: last night's sleep and recovery vs. your own
     30-day baseline, the last 7 days vs. that baseline, and today's calendar."""
     last_night = today - timedelta(days=1)  # behavior day whose sleep ended this morning
@@ -173,5 +185,5 @@ def build_daily_summary(panel: pd.DataFrame, today: date, tz: str,
         calendar=calendar_summary(events_today, today, tz, now) if events_today is not None else None,
         signals=compute_signals(panel, today),
     )
-    summary["focus"] = choose_focus(summary, panel, today, now, recent_focuses, not_useful)
+    summary["focus"] = choose_focus(summary, panel, today, now, recent_focuses, not_useful, habits)
     return summary

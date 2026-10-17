@@ -18,6 +18,7 @@ from src.db.models import DailyPlan, User, UserSettings
 from src.db.upsert import upsert
 from src.feedback.outcome import evaluate
 from src.planner.focus import TITLES
+from src.planner.habits import activity_profile
 from src.report.daily import build_daily_summary
 from src.report.data import (
     load_events_for_day,
@@ -25,6 +26,7 @@ from src.report.data import (
     load_plan,
     load_recent_focuses,
     load_recent_panel,
+    load_recent_workouts,
 )
 from src.report.render import render_email
 from src.report.schedule import (
@@ -113,8 +115,10 @@ class DailyPipeline:
             events = load_events_for_day(session, uid, today, tz) if user_id in self.google_users else None
             recent = load_recent_focuses(session, uid, today)
             muted = load_not_useful(session, uid, today)
+            habits = activity_profile(load_recent_workouts(session, uid, today), today)
             plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
-        summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted)
+        summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted,
+                                      habits=habits)
         # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
         # Yesterday's is shown in the email; older days are re-checked while their data was
         # still missing (e.g. sleep not scored yet when the email went out).

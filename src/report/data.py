@@ -14,6 +14,7 @@ from src.db.models import (
     DailyPlan,
     Recovery,
     Sleep,
+    Workout,
 )
 from src.sources import whoop
 
@@ -79,3 +80,11 @@ def load_plan(session: Session, user_id: int, day: date) -> dict | None:
         return None
     return dict(focus=p.focus, block=p.block, final_block=p.final_block, response=p.response,
                 calendar_status=p.calendar_status, outcome=p.outcome)
+
+
+def load_recent_workouts(session: Session, user_id: int, today: date, days: int = 56) -> list[dict]:
+    """Workouts of the last `days` days: activity name, times and strain only."""
+    lo = datetime.combine(today - timedelta(days=days), time.min, timezone.utc)
+    rows = session.scalars(select(Workout).where(Workout.user_id == user_id, Workout.start >= lo))
+    return [dict(sport_name=w.sport_name, start=w.start, end=w.end, timezone_offset=w.timezone_offset,
+                 strain=w.strain) for w in rows if w.score_state in (None, "SCORED")]

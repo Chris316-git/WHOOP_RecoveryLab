@@ -41,7 +41,7 @@ def test_recovery_zones_match_whoop():
 def test_free_windows_between_events():
     events = [dict(start=at(9), end=at(10)), dict(start=at(10, 15), end=at(12)), dict(start=at(15), end=at(16))]
     w = free_windows(events, TODAY, TZ)
-    assert [(x["start"], x["end"]) for x in w] == [("08:00", "09:00"), ("12:00", "15:00"), ("16:00", "20:00")]
+    assert [(x["start"], x["end"]) for x in w] == [("07:00", "09:00"), ("12:00", "15:00"), ("16:00", "24:00")]
     # From 13:00 onward only the remaining gaps count.
     w = free_windows(events, TODAY, TZ, now=at(13))
     assert w[0]["start"] == "13:00"

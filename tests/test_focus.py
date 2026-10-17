@@ -102,10 +102,10 @@ def test_waits_when_last_night_is_not_scored():
     assert f["focus"] == "none" and "Waiting" in f["title"]
 
 
-def test_find_slot_prefers_late_afternoon_and_respects_latest_end():
+def test_find_slot_stays_close_to_the_preferred_time_and_respects_latest_end():
     free = [dict(start="09:00", end="11:00", minutes=120), dict(start="15:00", end="20:00", minutes=300)]
     assert find_slot(free, 60)["start"] == "16:00"
-    assert find_slot(free, 60, latest_end=16 * 60 + 30)["start"] == "09:00"
+    assert find_slot(free, 60, latest_end=16 * 60 + 30)["start"] == "15:30"   # as close to 16:00 as fits
     assert find_slot([dict(start="09:00", end="09:20", minutes=20)], 30) is None
 
 
@@ -136,3 +136,29 @@ def test_advice_states_confidence_counter_evidence_and_why_not_hard():
 def test_confidence_bands():
     from src.planner.focus import confidence
     assert confidence(0.8) == "high" and confidence(0.65) == "moderate" and confidence(0.5) == "tentative"
+
+
+def test_planner_uses_your_activity_at_your_usual_time():
+    from src.planner.habits import activity_profile
+    from tests.test_habits import workout
+    habits = activity_profile([workout(d, "running", 14, 50, 12.0) for d in (2, 5, 9, 12)], date(2026, 10, 17))
+    sig = {"load": dict(ratio=1.55, consecutive_hard_days=3, level="very_high")}
+    free = [dict(start="07:00", end="09:00", minutes=120), dict(start="12:00", end="24:00", minutes=720)]
+    f = choose_focus(summary(signals=sig, free=free), EMPTY, TODAY, habits=habits)
+    assert f["focus"] == "lower_intensity" and f["block"]["start"] == "07:00"     # you usually run at 07:00
+    assert f["block"]["title"].startswith("Easy running") and "last 8 weeks" in f["note"]
+
+
+def test_todays_case_hard_yesterday_low_hrv_and_chronic_sleep_debt():
+    """Oct 17: HRV below range, resting HR above, strain 15.5 yesterday, 9h45m short over 7 nights."""
+    sig = {"load": dict(ratio=1.2, consecutive_hard_days=1, level="normal", yesterday_load=15.5),
+           "hrv": dict(status="below", recent_mean=95.2, normal_low=97.7, normal_high=117.5),
+           "resting_hr": dict(status="above", recent_mean=56),
+           "sleep": dict(shortfall_min=585, typical_shortfall_min=560, nights_measured=7, nights_short=6,
+                         need_source="whoop")}
+    f = choose_focus(summary(signals=sig, sleep_delta=-45), EMPTY, TODAY)
+    assert f["focus"] == "lower_intensity" and f["confidence"] in ("moderate", "high")
+    assert any("strain 15.5" in r for r in f["reasons"]) and any("behind on sleep" in r for r in f["reasons"])
+    # chronic sleep debt now counts even though it is "your usual week"
+    sleep_score = dict(f["considered"])["prioritize_sleep"]
+    assert sleep_score >= THRESHOLD

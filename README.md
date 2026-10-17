@@ -39,7 +39,8 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
 - [x] Per-user send time and time zone
 - [x] Personal trends: HRV and resting heart rate vs. your normal range, sleep shortfall, training load, weekday patterns
-- [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time
+- [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time between 07:00 and midnight
+- [x] Suggestions built from your own workout history: the easy or hard version of the activities you actually do, at your usual time
 - [x] Optional one-tap "Add to calendar" (with Undo) for focuses that need a time block, on a dedicated "Recovery Lab" calendar
 - [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
 - [ ] Feedback loop, the rest: did it help, over many days?
@@ -147,7 +148,7 @@ src/
   sources/     Wearable adapters: vendor rows -> device-agnostic DailyRecords (whoop.py)
   analysis/    DailyRecord contract and the daily panel (day alignment of sleep, readiness, load, calendar)
   report/      Trend signals, daily summary and email rendering (pure logic)
-  planner/     Today's focus: scoring, threshold, time slot (pure logic)
+  planner/     Today's focus: scoring, threshold, time slot, activity habits (pure logic)
   feedback/    Did yesterday's focus happen? Checked from wearable data (pure logic)
   pipeline/    The daily pipeline as injectable stages: sync -> build -> record -> deliver
   db/          SQLAlchemy models, session factories, upsert, encrypted credentials

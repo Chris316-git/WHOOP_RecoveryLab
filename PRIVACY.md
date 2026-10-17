@@ -71,6 +71,8 @@ The data is used **only** to provide Recovery Lab's features to you:
 - syncing and analyzing your sleep, recovery and strain;
 - comparing each day with your own historical baseline;
 - finding free time in your schedule so suggestions fit around it;
+- suggesting the easy or hard version of activities you already do, using your recent workout
+  types, durations and times;
 - estimating the effect of habit experiments with statistical models;
 - sending you a daily summary email.
 

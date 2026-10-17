@@ -21,8 +21,8 @@ from src.planner.focus import TITLES
 from src.planner.habits import activity_profile, parse_sports
 from src.report.daily import build_daily_summary
 from src.report.data import (
-    load_active_experiment,
     load_events_for_day,
+    load_experiments,
     load_not_useful,
     load_plan,
     load_recent_focuses,
@@ -124,7 +124,7 @@ class DailyPipeline:
                                       preferred_sports=parse_sports(prefs.sports if prefs else None))
             plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
             history = load_recent_plans(session, uid, today)
-            active = load_active_experiment(session, uid)
+            experiments, answers = load_experiments(session, uid)
         summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted,
                                       habits=habits)
         # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
@@ -139,17 +139,44 @@ class DailyPipeline:
             if review:
                 summary["reviews"][k] = review
         summary["yesterday"] = summary["reviews"].get(1)
-        if active:
-            from src.experiments.daily import experiment_today
-            from src.planner.focus import usual_bedtime
-            exp, adherence = active
-            summary["experiment"] = experiment_today(exp, adherence, panel, today, usual_bedtime(panel, today))
-            block = summary["focus"].get("block")
-            if summary["experiment"].get("arm") == "control" and block and "screen" in block["title"].lower():
-                block["title"] = "Wind down: lights low, slow down"   # never contradict tonight's assignment
+        self.experiment_context(summary, experiments, answers, panel, today)
         from src.reasoning.evidence import build_case
         summary["reasoning_case"] = build_case(summary, panel, today, now, habits, history)
         return summary
+
+    def experiment_context(self, summary: dict, experiments: list[dict], answers: dict, panel, today) -> None:
+        """Active experiment, a finished one awaiting keep/extend/drop, today's proposal, or the
+        presets the AI may propose (all decided in code)."""
+        from src.experiments.daily import decision_card, eligible_presets, experiment_today
+        from src.experiments.presets import preset
+        from src.planner.focus import usual_bedtime
+        summary["kept_habits"] = [dict(title=preset(e["preset"])["title"],
+                                       verdict=e["result"]["primary"]["itt"]["verdict"])
+                                  for e in experiments if e.get("next_step") == "keep" and e.get("result")]
+        active = next((e for e in experiments if e["status"] == "active"), None)
+        if active:
+            info = experiment_today(active, answers, panel, today, usual_bedtime(panel, today))
+            summary["experiment"] = info
+            block = summary["focus"].get("block")
+            words = preset(active["preset"])["conflict_words"]
+            if info.get("arm") == "control" and block and any(w in block["title"].lower() for w in words):
+                block["title"] = "Wind down: lights low, slow down"   # never contradict tonight's assignment
+            return
+        card = next((c for c in (decision_card(e, today) for e in experiments) if c), None)
+        if card:
+            summary["experiment"] = card
+        proposed = next((e for e in experiments if e["status"] == "proposed"
+                         and e.get("proposed_on") == today.isoformat()), None)
+        if proposed:
+            spec = preset(proposed["preset"])
+            summary["experiment_proposal"] = dict(id=proposed["id"], preset=proposed["preset"], title=spec["title"],
+                                                  question=spec["question"], nights=proposed["nights"],
+                                                  why=proposed.get("reason"))
+        elif not card:
+            history = int(panel["recovery_score"].notna().sum()) if "recovery_score" in panel else 0
+            summary["experiment_options"] = [dict(preset=k, title=preset(k)["title"], question=preset(k)["question"],
+                                                  nights=preset(k)["nights"])
+                                             for k in eligible_presets(experiments, today, history)]
 
     # ---- stage 2a: AI reasoning ----
     def reason(self, summary: dict, run: UserRun) -> None:
@@ -169,6 +196,22 @@ class DailyPipeline:
         if result["status"] == "ok" and mode == "ai":
             summary["rule_focus"] = summary["focus"]
             summary["focus"] = result["focus"]
+            if result.get("proposal") and summary.get("experiment_options"):
+                summary["experiment_proposal"] = dict(result["proposal"], new=True)
+
+    def explain_experiment(self, summary: dict, run: UserRun) -> None:
+        """Plain-language explanation of a just-finished experiment by the LLM (numbers checked)."""
+        info = summary.get("experiment") or {}
+        if not info.get("done") or info.get("decide") or not (self.settings.anthropic_api_key or self.wording_call):
+            return
+        from src.experiments.explain_ai import explain_result
+        from src.experiments.presets import preset
+        message, status = explain_result(info["result"], preset(info["preset"]),
+                                         self.settings.anthropic_api_key or "test", self.settings.llm_model,
+                                         call=self.wording_call)
+        if message:
+            info["explanation"] = info["result"]["ai_explanation"] = message
+        run.steps.append(f"experiment explanation: {status}")
 
     # ---- stage 2b: wording ----
     def word(self, summary: dict, run: UserRun) -> None:
@@ -267,20 +310,53 @@ class DailyPipeline:
                 e.status, e.result, e.ended_at = "completed", info["result"], datetime.now(timezone.utc)
                 session.commit()
 
-    def experiment_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
-        """Signed one-tap Yes / No links for last night's adherence question (valid ~2 days)."""
-        ask = (summary.get("experiment") or {}).get("ask")
-        if not (self.settings.actions_enabled and ask):
-            return None
+    def save_proposal(self, user_id: str, summary: dict, now: datetime) -> None:
+        """Store a new AI proposal as a 'proposed' experiment, waiting for Start / Not now."""
+        import secrets
+
+        from src.experiments.presets import preset
+        p = summary.get("experiment_proposal")
+        if not p or not p.get("new"):
+            return
+        with self.session_factory() as session:
+            e = Experiment(user_id=int(user_id), preset=p["preset"], start_day=now.date(),
+                           nights=preset(p["preset"])["nights"], seed=secrets.randbelow(2**31), schedule=[],
+                           status="proposed", proposed_on=now.date(), reason=p["why"], extensions=0)
+            session.add(e)
+            session.commit()
+            p["id"] = e.id
+
+    def experiment_links(self, user_id: str, summary: dict, now: datetime) -> dict:
+        """Signed one-tap links for the experiment card (valid ~2 days): last night's Yes / No,
+        keep / extend / drop after a result, stop, Start / Not now for a proposal, and browse."""
         from datetime import date as _date
         from datetime import time
 
         from src.actions.tokens import ActionToken, sign
+        if not self.settings.actions_enabled:
+            return {}
         expires = int(datetime.combine(now.date() + timedelta(days=2), time(6), now.tzinfo).timestamp())
-        day = _date.fromisoformat(ask["day"])
         base, key = self.settings.public_base_url, self.settings.action_signing_key
-        return {a: f"{base}/a/{sign(ActionToken(int(user_id), day, a, expires), key)}"
-                for a in ("adhere_yes", "adhere_no")}
+
+        def link(action: str, day) -> str:
+            return f"{base}/a/{sign(ActionToken(int(user_id), day, action, expires), key)}"
+
+        links, x, p = {}, summary.get("experiment") or {}, summary.get("experiment_proposal")
+        if x.get("ask"):
+            day = _date.fromisoformat(x["ask"]["day"])
+            links.update(adhere_yes=link("adhere_yes", day), adhere_no=link("adhere_no", day))
+        if x:
+            start = _date.fromisoformat(x["start_day"])
+            if x.get("done"):
+                for step in x["result"].get("steps") or ["keep", "drop"]:
+                    links[f"exp_{step}"] = link(f"exp_{step}", start)
+            else:
+                links["exp_stop"] = link("exp_stop", start)
+        if p:
+            links.update(exp_start=link("exp_start", now.date()), exp_decline=link("exp_decline", now.date()))
+        if not x.get("arm") and not p:
+            links["exp_browse"] = link("exp_browse", now.date())
+        return links
 
     def action_links(self, user_id: str, summary: dict, now: datetime) -> dict | None:
         """Signed links, valid until 06:00 the next morning. Add to calendar / Change time /
@@ -323,6 +399,7 @@ class DailyPipeline:
                 return run
             run.detail = reason
         self.reason(summary, run)
+        self.explain_experiment(summary, run)
         self.word(summary, run)
         if mode == "preview":
             path = self.save_preview(user_id, summary, run.notices)
@@ -331,10 +408,10 @@ class DailyPipeline:
         status = self.save_plan(user_id, summary, now, tz)
         self.save_outcome(user_id, summary, now)
         self.save_experiment_result(user_id, summary)
-        if summary.get("experiment"):
-            summary["experiment"]["links"] = self.experiment_links(user_id, summary, now)
-            if summary["experiment"]["links"] and not summary.get("actions"):
-                self.warm_up()
+        self.save_proposal(user_id, summary, now)
+        summary["experiment_links"] = self.experiment_links(user_id, summary, now)
+        if summary["experiment_links"] and not summary.get("actions"):
+            self.warm_up()
         if status == "open":
             summary["actions"] = self.action_links(user_id, summary, now)
             if summary["actions"]:

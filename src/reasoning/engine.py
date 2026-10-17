@@ -9,7 +9,7 @@ import json
 from collections.abc import Callable
 
 from src.llm.wording import call_claude
-from src.reasoning.validate import FOCUS_TYPES, validate
+from src.reasoning.validate import FOCUS_TYPES, validate, validate_proposal
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
 
@@ -56,8 +56,14 @@ Reply with JSON only, exactly this shape:
              "title": "what to do, at most 70 characters",
              "start": "HH:MM", "minutes": 30},                               // start and minutes for calendar_block
   "uncertainty": "what the data cannot tell, or null",
-  "hypothesis": "a hedged guess about past adherence, or null"
+  "hypothesis": "a hedged guess about past adherence, or null",
+  "experiment_proposal": null or {"preset": one key from constraints.experiment_options,
+                                  "why": "1-2 sentences on why this is worth testing for the reader",
+                                  "evidence": ["E4"]}
 }
+Propose an experiment only if constraints.experiment_options is not empty AND the evidence makes one of them
+genuinely relevant for this reader (e.g. sleep keeps falling short). Otherwise use null. An experiment tests
+whether a habit actually changes the reader's numbers; never present its outcome as known in advance.
 focus_type meanings: lower_intensity (keep training light), prioritize_sleep (protect tonight's sleep),
 recover_between (breaks in a demanding day), go_hard (a good day for a hard session), other (something else the
 evidence supports), none (nothing needs to change).""".replace("FOCUS_TYPES", json.dumps(sorted(FOCUS_TYPES)))
@@ -83,8 +89,9 @@ def reason(case: dict, summary: dict, api_key: str, model: str = DEFAULT_MODEL,
             text = call(api_key, model, case)
         output = parse(text)
     except Exception as exc:
-        return dict(status="error", problems=[type(exc).__name__], output=None, focus=None)
+        return dict(status="error", problems=[type(exc).__name__], output=None, focus=None, proposal=None)
     focus, problems = validate(output, case, summary)
     if problems:
-        return dict(status="rejected", problems=problems, output=output, focus=None)
-    return dict(status="ok", problems=[], output=output, focus=focus)
+        return dict(status="rejected", problems=problems, output=output, focus=None, proposal=None)
+    proposal, proposal_problems = validate_proposal(output.get("experiment_proposal"), case)
+    return dict(status="ok", problems=proposal_problems, output=output, focus=focus, proposal=proposal)

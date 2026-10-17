@@ -60,8 +60,9 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 
 # ---------------- Add to calendar / Change time / Dismiss ----------------
 
-RESULT_TITLES = {"recorded": "Answer saved", "added": "Added to your calendar", "moved": "Time changed",
-                 "dismissed": "Dismissed",
+RESULT_TITLES = {"started": "Experiment started", "declined_exp": "Not now", "decided": "Saved",
+                 "stopped": "Experiment stopped", "recorded": "Answer saved", "added": "Added to your calendar",
+                 "moved": "Time changed", "dismissed": "Dismissed",
                  "not_useful": "Thanks for the feedback", "undone": "Undone", "already": "Already done",
                  "nothing": "Nothing to do"}
 
@@ -127,6 +128,16 @@ def action_page(token: str, request: Request):
     if t.action in ("adhere_yes", "adhere_no"):   # experiment answers do not depend on a daily plan
         label = "Yes, I did" if t.action == "adhere_yes" else "No, not last night"
         return _no_store(HTMLResponse(pages.one_tap(url, "Saving your answer…", label)))
+    one_tap = {"exp_start": ("Starting the experiment…", "Start the experiment"),
+               "exp_decline": ("Saving…", "Not now"), "exp_keep": ("Saving…", "Keep the habit"),
+               "exp_extend": ("Extending…", "Extend the experiment"), "exp_drop": ("Saving…", "Drop it")}
+    if t.action in one_tap:
+        return _no_store(HTMLResponse(pages.one_tap(url, *one_tap[t.action])))
+    if t.action == "exp_stop":   # stopping cannot be undone, so it waits for a tap
+        return _no_store(HTMLResponse(pages.confirm(url, "Stop the experiment?", "Yes, stop it")))
+    if t.action == "exp_browse":
+        options, running = service.experiment_options(t)
+        return _no_store(HTMLResponse(pages.experiment_list(url, options, running)))
     try:
         plan = service.plan(t)
     except PlanNotFound as exc:
@@ -149,7 +160,7 @@ def action_page(token: str, request: Request):
 
 
 @app.post("/a/{token}")
-def action_submit(token: str, request: Request, choice: int | None = None):
+def action_submit(token: str, request: Request, choice: int | None = None, preset: str | None = None):
     from src.actions import pages
     from src.actions.service import PlanNotFound
     service, key, t, error = _verify(request, token)
@@ -158,6 +169,16 @@ def action_submit(token: str, request: Request, choice: int | None = None):
     try:
         if t.action in ("adhere_yes", "adhere_no"):
             outcome = service.adhere(t, t.action == "adhere_yes")
+        elif t.action == "exp_start":
+            outcome = service.start_proposed(t)
+        elif t.action == "exp_decline":
+            outcome = service.decline(t)
+        elif t.action in ("exp_keep", "exp_extend", "exp_drop"):
+            outcome = service.decide(t, t.action.removeprefix("exp_"))
+        elif t.action == "exp_stop":
+            outcome = service.stop_experiment(t)
+        elif t.action == "exp_browse":
+            outcome = service.start_preset(t, preset or "")
         elif t.action == "add":
             outcome = service.add(t)
         elif t.action == "change":

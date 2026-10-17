@@ -12,6 +12,7 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from src.experiments.presets import preset
 from src.planner.focus import DEFAULT_BEDTIME, EARLIEST_TARGET_BEDTIME, TITLES, hard_day_blockers, usual_bedtime
 
 HISTORY_DAYS = 7
@@ -138,6 +139,9 @@ def build_case(summary: dict, panel: pd.DataFrame, today: date, now: datetime | 
     if recent_plans and all(p.get("focus") in (None, "none") for p in recent_plans):
         add("history", "No suggestions were made in the last 7 days (nothing needed to change).")
 
+    for k in summary.get("kept_habits") or []:
+        add("experiments", f"Earlier experiment \"{k['title']}\": result {k['verdict'].replace('_', ' ')}; "
+                           f"you chose to keep the habit.")
     x = summary.get("experiment") or {}
     if x.get("arm"):
         add("experiment", f"An experiment is running: \"{x['title']}\", night {x['night']} of {x['nights']}. "
@@ -156,5 +160,8 @@ def build_case(summary: dict, panel: pd.DataFrame, today: date, now: datetime | 
             free_windows=(cal or {}).get("free_windows") if cal else None,
             hard_session_allowed=not blockers,
             experiment_tonight=x.get("arm"),   # "treatment" | "control" | None
+            experiment_conflict_words=list(preset(x["preset"])["conflict_words"]) if x.get("arm") == "control" else [],
+            # experiments the AI may propose today (empty: do not propose one)
+            experiment_options=summary.get("experiment_options") or [],
         ),
     )

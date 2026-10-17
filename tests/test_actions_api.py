@@ -143,3 +143,47 @@ def test_experiment_answer_is_recorded(setup):
     client.post(link("adhere_no"))                                  # changing the answer overwrites it
     with factory() as s:
         assert s.get(ExperimentDay, (1, DAY)).adherence == "no"
+
+
+def test_proposal_start_decide_extend_and_browse(setup):
+    from src.db.models import Experiment
+    client, factory, _ = setup
+    with factory() as s:
+        s.add(Experiment(id=5, user_id=USER, preset="screens_off_30", start_day=DAY, nights=14, seed=3, schedule=[],
+                         status="proposed", proposed_on=DAY, reason="Sleep keeps falling short.", extensions=0))
+        s.commit()
+    assert "Start the experiment" in client.get(link("exp_start")).text
+    r = client.post(link("exp_start"))
+    assert "Experiment started" in r.text
+    with factory() as s:
+        e = s.get(Experiment, 5)
+        assert e.status == "active" and len(e.schedule) == 14 and e.start_day == DAY   # clock 10:00 local: tonight
+    assert "already running" in client.post(link("exp_browse") + "?preset=no_afternoon_caffeine").text
+    stop_link = "/a/" + sign(ActionToken(USER, DAY, "exp_stop", 4_000_000_000), KEY)
+    assert "Stop the experiment?" in client.get(stop_link).text
+    with factory() as s:                                                 # pretend it finished, inconclusive
+        e = s.get(Experiment, 5)
+        e.status, e.result = "completed", {"primary": {"itt": {"verdict": "inconclusive"}}}
+        s.commit()
+    assert "Extended by 6 nights" in client.post(link("exp_extend")).text
+    with factory() as s:
+        e = s.get(Experiment, 5)
+        assert e.status == "active" and e.nights == 20 and e.extensions == 1 and len(e.schedule) == 20
+    client.post(stop_link)
+    with factory() as s:
+        assert s.get(Experiment, 5).status == "stopped"
+    page = client.get(link("exp_browse")).text
+    assert "No caffeine after 14:00" in page and "Start this experiment" in page
+    assert "Experiment started" in client.post(link("exp_browse") + "?preset=no_afternoon_caffeine").text
+
+
+def test_declined_proposal(setup):
+    from src.db.models import Experiment
+    client, factory, _ = setup
+    with factory() as s:
+        s.add(Experiment(id=6, user_id=USER, preset="no_afternoon_caffeine", start_day=DAY, nights=14, seed=3,
+                         schedule=[], status="proposed", proposed_on=DAY, extensions=0))
+        s.commit()
+    assert "Not now" in client.post(link("exp_decline")).text
+    with factory() as s:
+        assert s.get(Experiment, 6).status == "declined"

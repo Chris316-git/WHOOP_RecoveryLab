@@ -135,10 +135,20 @@ def render_text(summary: dict, notices: list[str]) -> str:
         if x.get("ask"):
             lines.append(f"  {x['ask']['question']}")
             for k, label in (("adhere_yes", "Yes"), ("adhere_no", "No")):
-                if (x.get("links") or {}).get(k):
-                    lines.append(f"  {label}: {x['links'][k]}")
+                if (summary.get("experiment_links") or {}).get(k):
+                    lines.append(f"  {label}: {summary['experiment_links'][k]}")
         if x.get("done"):
             lines.append(f"  Result: {x['explanation']}")
+            for k, label in STEP_LABEL.items():
+                if (summary.get("experiment_links") or {}).get(f"exp_{k}"):
+                    lines.append(f"  {label}: {summary['experiment_links'][f'exp_{k}']}")
+        lines.append("")
+    p = summary.get("experiment_proposal")
+    if p:
+        lines += [f"SUGGESTED EXPERIMENT: {p['title']}", f"  {p.get('why') or p['question']}"]
+        for k, label in (("exp_start", "Start"), ("exp_decline", "Not now")):
+            if (summary.get("experiment_links") or {}).get(k):
+                lines.append(f"  {label}: {summary['experiment_links'][k]}")
         lines.append("")
     if not summary["last_night_scored"]:
         lines.append("Last night's sleep is not scored yet (or WHOOP was not worn).")
@@ -488,41 +498,69 @@ VERDICT_LABEL = {"helped": ("It helped", GOOD), "worse": ("It made things worse"
                  "not_enough_data": ("Not enough data", MUTED)}
 
 
+STEP_LABEL = {"keep": "Keep it", "extend": "Extend", "drop": "Drop it"}
+
+
+def _link_buttons(links: dict, spec: list[tuple[str, str]], primary: str | None = None) -> str:
+    cells = "".join(
+        f'<td style="padding:0 8px 0 0"><a href="{escape(links[k])}" style="display:inline-block;'
+        f'background:{INK if k == primary else CARD};color:{"#ffffff" if k == primary else INK};'
+        f'border:1px solid {INK if k == primary else LINE};border-radius:10px;padding:8px 14px;font-size:14px;'
+        f'font-weight:600;text-decoration:none">{escape(label)}</a></td>'
+        for k, label in spec if links.get(k))
+    return (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>{cells}'
+            f'</tr></table>') if cells else ""
+
+
 def _experiment(summary: dict) -> str:
-    """The active experiment: tonight's assignment, last night's one-tap question, or the result."""
-    x = summary.get("experiment")
-    if not x:
-        return ""
-    head = f"Experiment · night {x['night']} of {x['nights']}" if x.get("night") else "Experiment"
-    parts = [f'<div style="font-size:17px;font-weight:600;color:{INK}">{escape(x["title"])}</div>']
-    if x.get("tonight"):
-        parts.append(f'<div style="font-size:14px;color:{INK_2};margin-top:6px;line-height:1.45">'
-                     f'{escape(x["tonight"])}</div>')
-    ask, links = x.get("ask"), x.get("links") or {}
-    if ask:
-        hint = (f'<div style="font-size:12px;color:{MUTED};margin-top:4px">{escape(ask["hint"])}</div>'
-                if ask.get("hint") else "")
-        buttons = ""
-        if links:
-            buttons = "".join(
-                f'<td style="padding:0 8px 0 0"><a href="{escape(links[k])}" style="display:inline-block;'
-                f'background:{CARD};color:{INK};border:1px solid {LINE};border-radius:10px;padding:8px 14px;'
-                f'font-size:14px;font-weight:600;text-decoration:none">{label}</a></td>'
-                for k, label in (("adhere_yes", "Yes"), ("adhere_no", "No")))
-            buttons = (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px">'
-                       f'<tr>{buttons}</tr></table>')
-        parts.append(f'<div style="font-size:14px;color:{INK};margin-top:12px">{escape(ask["question"])}</div>'
-                     f'{hint}{buttons}')
-    if x.get("done"):
-        verdict = x["result"]["primary"]["itt"]["verdict"]
-        label, color = VERDICT_LABEL[verdict]
-        parts.append(f'<div style="margin-top:12px;font-size:15px;font-weight:600;color:{color}">'
-                     f'Result: {label}</div>'
-                     f'<div style="font-size:14px;color:{INK_2};margin-top:4px;line-height:1.5">'
-                     f'{escape(x["explanation"])}</div>')
-    elif x.get("waiting"):
-        parts.append(f'<div style="font-size:13px;color:{MUTED};margin-top:10px">{escape(x["waiting"])}</div>')
-    return _card(_title(head) + "".join(parts))
+    """Experiments: the active one (tonight's plan, last night's question), a result with keep /
+    extend / drop, or an AI proposal with Start / Not now."""
+    x, p, links = summary.get("experiment"), summary.get("experiment_proposal"), summary.get("experiment_links") or {}
+    cards = ""
+    if x:
+        head = f"Experiment · night {x['night']} of {x['nights']}" if x.get("night") else "Experiment"
+        parts = [f'<div style="font-size:17px;font-weight:600;color:{INK}">{escape(x["title"])}</div>']
+        if x.get("tonight"):
+            parts.append(f'<div style="font-size:14px;color:{INK_2};margin-top:6px;line-height:1.45">'
+                         f'{escape(x["tonight"])}</div>')
+        ask = x.get("ask")
+        if ask:
+            hint = (f'<div style="font-size:12px;color:{MUTED};margin-top:4px">{escape(ask["hint"])}</div>'
+                    if ask.get("hint") else "")
+            parts.append(f'<div style="font-size:14px;color:{INK};margin-top:12px">{escape(ask["question"])}</div>'
+                         + hint + _link_buttons(links, [("adhere_yes", "Yes"), ("adhere_no", "No")]))
+        if x.get("done"):
+            r = x["result"]
+            label, color = VERDICT_LABEL[r["primary"]["itt"]["verdict"]]
+            steps = r.get("steps") or ["keep", "drop"]
+            rec = r.get("recommended")
+            parts.append(f'<div style="margin-top:12px;font-size:15px;font-weight:600;color:{color}">'
+                         f'Result: {label}</div>'
+                         f'<div style="font-size:14px;color:{INK_2};margin-top:4px;line-height:1.5">'
+                         f'{escape(x["explanation"])}</div>')
+            if rec:
+                rec_text = {"keep": "keep the habit", "extend": "extend the experiment by a few nights",
+                            "drop": "drop the habit"}[rec]
+                parts.append(f'<div style="font-size:13px;color:{MUTED};margin-top:8px">Suggested next step: '
+                             f'{rec_text}.</div>')
+            parts.append(_link_buttons(links, [(f"exp_{s}", STEP_LABEL[s]) for s in steps], primary=f"exp_{rec}"))
+        elif x.get("waiting"):
+            parts.append(f'<div style="font-size:13px;color:{MUTED};margin-top:10px">{escape(x["waiting"])}</div>')
+        if links.get("exp_stop"):
+            parts.append(f'<div style="font-size:12px;margin-top:10px"><a href="{escape(links["exp_stop"])}" '
+                         f'style="color:{MUTED};text-decoration:underline">Stop this experiment</a></div>')
+        cards += _card(_title(head) + "".join(parts))
+    if p:
+        why = (f'<div style="font-size:14px;color:{INK_2};margin-top:6px;line-height:1.45">{escape(p["why"])}</div>'
+               if p.get("why") else "")
+        cards += _card(_title("Suggested experiment")
+                       + f'<div style="font-size:17px;font-weight:600;color:{INK}">{escape(p["title"])}</div>' + why
+                       + f'<div style="font-size:13px;color:{MUTED};margin-top:8px">{p["nights"]} nights; on half of '
+                         f'them, picked at random, you try the habit. One Yes/No tap each morning, then a clear '
+                         f'result.</div>'
+                       + _link_buttons(links, [("exp_start", "Start experiment"), ("exp_decline", "Not now")],
+                                       primary="exp_start"))
+    return cards
 
 
 def render_html(summary: dict, notices: list[str]) -> str:
@@ -540,7 +578,10 @@ def render_html(summary: dict, notices: list[str]) -> str:
               f'Compared with your own recent history. Suggestions are rules of thumb, not a diagnosis; adjust to how '
               f'you feel. The focus is chosen by {chosen_by}, not by '
               f'experiment results; a single day cannot show what caused what. Not medical advice. '
-              f'Change the delivery time with <code>make settings</code>.</td></tr>')
+              f'Change the delivery time with <code>make settings</code>.'
+              + (f' <a href="{escape(summary["experiment_links"]["exp_browse"])}" style="color:{MUTED}">'
+                 f'Browse experiments</a>.' if (summary.get("experiment_links") or {}).get("exp_browse") else "")
+              + '</td></tr>')
     content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _experiment(summary)
                + _body(summary)
                + _today(summary) + footer)

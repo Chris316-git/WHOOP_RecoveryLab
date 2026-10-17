@@ -73,3 +73,19 @@ def done(title: str, message: str, block: dict | None = None, undo_url: str | No
     if not_useful_url:
         body += text_button(not_useful_url, "The suggestion itself wasn't useful")
     return page(title, body)
+
+
+def experiment_list(url: str, options: list[dict], running: bool) -> str:
+    if running:
+        return page("Experiments", f'<p style="color:{MUTED}">An experiment is already running. You can start '
+                    'another one when it ends.</p>')
+    items = "".join(
+        f'<div style="border-top:1px solid {LINE};padding:14px 0 4px">'
+        f'<div style="font-size:16px;font-weight:600">{escape(o["title"])}</div>'
+        f'<div style="color:{MUTED};font-size:14px;margin-top:4px">{escape(o["question"])} '
+        f'{o["nights"]} nights; on half of them, chosen at random: {escape(o["treatment"])}</div>'
+        + button(f"{url}?preset={o['key']}", "Start this experiment", primary=False) + "</div>"
+        for o in options)
+    return page("Start an experiment", f'<p style="color:{MUTED};margin:0 0 6px">Each experiment randomly '
+                'assigns nights, asks one Yes/No question the next morning, and reports what changed for you.</p>'
+                + items)

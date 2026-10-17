@@ -101,6 +101,27 @@ def load_recent_plans(session: Session, user_id: int, today: date, days: int = 7
                  outcome_detail=p.outcome_detail) for p in rows]
 
 
+def _experiment_dict(e) -> dict:
+    return dict(id=e.id, preset=e.preset, nights=e.nights, schedule=e.schedule or [], status=e.status,
+                start_day=e.start_day.isoformat(), proposed_on=e.proposed_on.isoformat() if e.proposed_on else None,
+                ended_on=e.ended_at.date().isoformat() if e.ended_at else None, result=e.result,
+                next_step=e.next_step, extensions=e.extensions or 0, reason=e.reason)
+
+
+def load_experiments(session: Session, user_id: int, days: int = 180) -> tuple[list[dict], dict[str, str]]:
+    """The user's recent experiments (newest first) and the active one's confirmed answers by day."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = list(session.scalars(select(Experiment).where(Experiment.user_id == user_id,
+                                                         Experiment.created_at >= since)
+                                .order_by(Experiment.id.desc())))
+    active = next((e for e in rows if e.status == "active"), None)
+    answers = {}
+    if active is not None:
+        answers = {d.day.isoformat(): d.adherence for d in session.scalars(
+            select(ExperimentDay).where(ExperimentDay.experiment_id == active.id)) if d.adherence}
+    return [_experiment_dict(e) for e in rows], answers
+
+
 def load_active_experiment(session: Session, user_id: int) -> tuple[dict, dict[str, str]] | None:
     """The user's active experiment and its confirmed adherence by day, or None."""
     e = session.scalars(select(Experiment).where(Experiment.user_id == user_id, Experiment.status == "active")
@@ -108,5 +129,4 @@ def load_active_experiment(session: Session, user_id: int) -> tuple[dict, dict[s
     if e is None:
         return None
     days = session.scalars(select(ExperimentDay).where(ExperimentDay.experiment_id == e.id))
-    exp = dict(id=e.id, preset=e.preset, nights=e.nights, schedule=e.schedule, start_day=e.start_day.isoformat())
-    return exp, {d.day.isoformat(): d.adherence for d in days if d.adherence}
+    return _experiment_dict(e), {d.day.isoformat(): d.adherence for d in days if d.adherence}

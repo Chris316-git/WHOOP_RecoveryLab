@@ -61,8 +61,10 @@ are signed and expire, and they contain no health data.
 ### Experiments
 
 If you start an experiment, Recovery Lab stores its randomized schedule (which nights are
-treatment and comparison nights), your Yes/No answer for each treatment night, and the final
-analysis (an effect estimate, interval and verdict). Outcomes are read from data already stored.
+treatment and comparison nights), your Yes/No answer for each treatment night, the final
+analysis (an effect estimate, interval and verdict) and your decision (keep, extend or drop).
+When the AI suggests an experiment, the suggestion and its one-sentence reason are stored too,
+so that a declined suggestion is not repeated. Outcomes are read from data already stored.
 
 ### Information you enter (planned)
 

@@ -216,8 +216,11 @@ adherence from a one-tap answer (not inferred from the wearable), and a randomiz
 with a t-interval, validated by simulation (about 5% false positives, about 95% coverage;
 with 7 pairs, power is low for small effects, so "inconclusive" is common and honest).
 The original ABAB plus Bayesian AR(1) design stays on the shelf until v0.1 has run end to end.
-Next: AI-proposed hypotheses and plain-language explanations (statistics stay in code), more
-presets, and extending an experiment when the interval is still too wide.
+Since then: three presets, AI-suggested experiments in the email (chosen from presets, evidence
+cited, eligibility and frequency decided in code), a browse page, AI explanations of results
+(numbers checked, template fallback) and keep / extend / drop, where the recommended step comes
+from the pre-specified verdict. Extending after seeing an inconclusive result is limited to once,
+because repeated looks inflate false positives; a proper sequential design is a later step.
 
 Goal: a user asks something like "Will skipping coffee after 2pm improve my sleep?" and gets a
 sound plan, guided execution and an honest answer.

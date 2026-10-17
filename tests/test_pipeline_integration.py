@@ -199,3 +199,19 @@ def test_active_experiment_appears_in_the_email(factory):
     make_pipeline(factory, outbox).run_user(str(USER), mode="now")
     html, text = outbox[0][2], outbox[0][3]
     assert "No screens 30 minutes before bed" in html and "night 3 of 4" in text.lower()
+
+
+def test_ai_proposal_becomes_a_start_button(factory):
+    import json as _json
+
+    from src.db.models import Experiment
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    plan = dict(AI_PLAN, experiment_proposal=dict(preset="screens_off_30", why="A good moment to test a habit.",
+                                                  evidence=["E1"]))
+    p.reasoning_call = lambda key, model, case: _json.dumps(plan)
+    p.run_user(str(USER), mode="now")
+    assert "Suggested experiment" in outbox[0][2]
+    with factory() as s:
+        e = s.query(Experiment).one()
+        assert e.status == "proposed" and e.preset == "screens_off_30" and e.reason.startswith("A good moment")

@@ -46,7 +46,7 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
 - [ ] Feedback loop, the rest: did it help, over many days?
 - [x] Personal experiment engine v0.1: one preset, randomized paired nights, one-tap adherence, randomization test
-- [ ] Experiments, next: more presets, AI-proposed hypotheses and explanations, data-driven length
+- [x] Experiments from the email: AI-suggested (checked), browse page, AI explanation of results, keep / extend / drop
 - [ ] Adaptive personalization: structured AI memory computed in code
 - [ ] Hosted multi-user web app
 
@@ -169,11 +169,21 @@ engine, within limits enforced in code:
 WHOOP can show that a habit and your recovery move together. An experiment asks whether the
 habit actually changes things *for you*:
 
-```bash
-uv run python scripts/experiment.py list
-uv run python scripts/experiment.py start screens_off_30     # 14 nights, starts tonight
-uv run python scripts/experiment.py status
-```
+Everything happens from the email:
+
+* **Suggested by the AI**: when nothing is running and your data makes one relevant, the email
+  shows a suggestion (at most one a week; a declined one stays quiet for a month) with
+  **Start experiment** / **Not now**. The AI picks from presets and must cite your evidence; it
+  cannot invent interventions or outcomes.
+* **Or pick one yourself**: "Browse experiments" in the email footer opens a page with all presets.
+* **At the end**: the verdict, a plain-language explanation (written by the AI from the computed
+  numbers, checked like everything else, with a template fallback) and a next step decided in
+  code: **Keep it**, **Extend** (once, by 6 nights) or **Drop it**. Kept habits become evidence
+  for future plans.
+
+Presets: no screens 30 minutes before bed (outcome: sleep performance), no hard training after
+20:00 (HRV), no caffeine after 14:00 (sleep performance). A command line exists for testing:
+`uv run python scripts/experiment.py list | start <preset> | status | stop`.
 
 * **Design** (`src/experiments/design.py`): nights in pairs, a seeded coin decides which night of
   each pair is the treatment night. Tonight's assignment appears in the morning email.

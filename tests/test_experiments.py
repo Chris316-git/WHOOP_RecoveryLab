@@ -88,7 +88,7 @@ def test_email_info_tonight_ask_and_result():
 
     from src.experiments.daily import experiment_today
     sched = make_schedule(START, 4, seed=3)
-    exp = dict(id=1, preset="screens_off_30", nights=4, schedule=sched)
+    exp = dict(id=1, preset="screens_off_30", nights=4, schedule=sched, start_day=START.isoformat())
     first_t = next(s for s in sched if s["arm"] == "treatment")
     day_after = date.fromisoformat(first_t["day"]) + timedelta(days=1)
     info = experiment_today(exp, {}, _panel([START + timedelta(days=k) for k in range(4)]), day_after, 23 * 60 + 30)
@@ -102,3 +102,57 @@ def test_email_info_tonight_ask_and_result():
     answers = {s["day"]: "yes" for s in sched if s["arm"] == "treatment"}
     done = experiment_today(exp, answers, _panel(days), after + timedelta(days=1), None)
     assert done["done"] and done["result"]["primary"]["itt"]["verdict"] == "not_enough_data"   # only 2 pairs
+
+
+def test_next_step_is_decided_in_code():
+    from src.experiments.daily import recommended_step
+    assert recommended_step("helped", 0) == ("keep", ["keep", "drop"])
+    assert recommended_step("inconclusive", 0)[0] == "extend"
+    assert recommended_step("inconclusive", 1) == ("drop", ["drop", "keep"])          # extended once already
+    assert recommended_step("no_meaningful_effect", 0)[0] == "drop"
+
+
+def test_proposal_eligibility_limits_nagging():
+    from src.experiments.daily import eligible_presets
+    today = date(2026, 11, 20)
+    assert eligible_presets([], today, history_days=10) == []                        # not enough data yet
+    assert set(eligible_presets([], today, 40)) == {"screens_off_30", "no_late_hard_training",
+                                                    "no_afternoon_caffeine"}
+    running = [dict(status="active", preset="screens_off_30", start_day="2026-11-15", proposed_on=None)]
+    assert eligible_presets(running, today, 40) == []
+    recent = [dict(status="declined", preset="screens_off_30", start_day="2026-11-17", proposed_on="2026-11-17",
+                   ended_on="2026-11-17")]
+    assert eligible_presets(recent, today, 40) == []                                 # one proposal a week
+    later = date(2026, 11, 30)
+    assert "screens_off_30" not in eligible_presets(recent, later, 40)               # declined: quiet for a month
+    assert "no_afternoon_caffeine" in eligible_presets(recent, later, 40)
+
+
+def test_decision_card_shows_for_a_few_days():
+    from src.experiments.daily import decision_card
+    spec = preset("screens_off_30")
+    sched = make_schedule(START, 14, seed=1)
+    nights = [dict(s, adherence="yes", sleep_performance_pct=80.0, hrv_rmssd_milli=100.0) for s in sched]
+    result = analyze(nights, spec)
+    exp = dict(id=1, preset="screens_off_30", nights=14, status="completed", next_step=None, result=result,
+               start_day=START.isoformat(), ended_on="2026-11-02")
+    assert decision_card(exp, date(2026, 11, 3))["decide"]
+    assert decision_card(exp, date(2026, 11, 9)) is None
+    assert decision_card(dict(exp, next_step="keep"), date(2026, 11, 3)) is None
+
+
+def test_ai_explanation_is_checked():
+    import json as _json
+
+    from src.experiments.explain_ai import explain_result
+    spec = preset("screens_off_30")
+    sched = make_schedule(START, 14, seed=1)
+    nights = [dict(s, adherence="yes", sleep_performance_pct=80 + (4 if s["arm"] == "treatment" else 0) + i % 3,
+                   hrv_rmssd_milli=100.0) for i, s in enumerate(sched)]
+    result = analyze(nights, spec)
+    eff = result["primary"]["itt"]["effect"]
+    good = f"Screen-free nights averaged {eff:g} points more sleep performance across 7 pairs."
+    msg, status = explain_result(result, spec, "k", "m", call=lambda *a: _json.dumps({"message": good}))
+    assert status == "llm" and msg == good
+    bad = "Your sleep improved by 42 points, which proves screens cause insomnia."
+    assert explain_result(result, spec, "k", "m", call=lambda *a: _json.dumps({"message": bad}))[0] is None

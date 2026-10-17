@@ -147,7 +147,8 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
         action_text = str(action.get("title") or "").lower()
         if ft == "go_hard" or any(w in action_text for w in HARD_WORDS):
             problems.append("hard session against the data")
-    if cons.get("experiment_tonight") == "control" and "screen" in lowered:
+    if cons.get("experiment_tonight") == "control" and any(w in lowered for w in cons.get("experiment_conflict_words")
+                                                              or ["screen"]):
         problems.append("conflicts with experiment")
     if ft == "none" and kind == "calendar_block":
         problems.append("block on a no-change day")
@@ -173,3 +174,28 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
         evidence_used=sorted({c for r in [*reasons, *counter] for c in r.get("evidence", [])},
                              key=lambda x: int(x[1:])),
     ), []
+
+
+def validate_proposal(p, case: dict) -> tuple[dict | None, list[str]]:
+    """An optional experiment proposal. A bad proposal is dropped; the day's plan still stands."""
+    if not p:
+        return None, []
+    options = {o["preset"]: o for o in (case.get("constraints") or {}).get("experiment_options") or []}
+    why = str(p.get("why") or "").strip() if isinstance(p, dict) else ""
+    ids = {e["id"] for e in case["evidence"]}
+    problems = []
+    if not isinstance(p, dict) or p.get("preset") not in options:
+        problems.append("proposal not allowed")
+    if not why or len(why) > 240:
+        problems.append("proposal length")
+    cited = p.get("evidence") or [] if isinstance(p, dict) else []
+    if not cited or any(c not in ids for c in cited):
+        problems.append("proposal evidence ids")
+    if _numbers(why) - _numbers(json.dumps(case, ensure_ascii=False)):
+        problems.append("proposal numbers")
+    if any(w in why.lower() for w in BANNED):
+        problems.append("proposal wording")
+    if problems:
+        return None, ["proposal dropped: " + ", ".join(problems)]
+    return dict(preset=p["preset"], why=why, evidence=cited, **{k: options[p["preset"]][k]
+                                                                for k in ("title", "question", "nights")}), []

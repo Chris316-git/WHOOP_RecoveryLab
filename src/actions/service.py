@@ -233,3 +233,116 @@ class ActionService:
         if yes:
             return Outcome("recorded", "Noted: you kept to the plan last night. Thanks.")
         return Outcome("recorded", "Noted: not last night. That is useful too; the analysis accounts for it.")
+
+    def _user_today(self, session, user_id: int):
+        """The user's local date and hour, from their saved time zone."""
+        from src.db.models import User
+        from src.report.schedule import resolve_timezone
+        row, user = session.get(UserSettings, user_id), session.get(User, user_id)
+        tz = resolve_timezone(row.timezone if row else None, user.timezone if user else None, self.default_tz)
+        now = self.clock().astimezone(ZoneInfo(tz))
+        return now.date(), now.hour
+
+    def _find(self, session, user_id: int, **where):
+        from sqlalchemy import select
+        q = select(Experiment).where(Experiment.user_id == user_id)
+        for k, v in where.items():
+            q = q.where(getattr(Experiment, k) == v)
+        return session.scalars(q.order_by(Experiment.id.desc())).first()
+
+    def _activate(self, session, exp: Experiment) -> str:
+        """Start now: tonight if before 18:00 local time, otherwise tomorrow."""
+        from datetime import timedelta
+
+        from src.experiments.design import make_schedule
+        if self._find(session, exp.user_id, status="active") is not None:
+            return "Another experiment is already running. Stop it first, or wait until it ends."
+        today, hour = self._user_today(session, exp.user_id)
+        start = today + timedelta(days=1 if hour >= 18 else 0)
+        exp.start_day, exp.status = start, "active"
+        exp.schedule = make_schedule(start, exp.nights, exp.seed)
+        session.commit()
+        when = "tonight" if start == today else "tomorrow"
+        return f"Started. It begins {when} and runs {exp.nights} nights; each morning's email tells you the plan."
+
+    def start_proposed(self, token: ActionToken) -> Outcome:
+        with self.session_factory() as session:
+            exp = self._find(session, token.user_id, status="proposed", proposed_on=token.day)
+            if exp is None:
+                return Outcome("already", "This suggestion is no longer open.")
+            return Outcome("started", self._activate(session, exp))
+
+    def start_preset(self, token: ActionToken, key: str) -> Outcome:
+        import secrets
+
+        from src.experiments.presets import PRESETS
+        if key not in PRESETS:
+            return Outcome("nothing", "Unknown experiment.")
+        with self.session_factory() as session:
+            exp = Experiment(user_id=token.user_id, preset=key, start_day=token.day, nights=PRESETS[key]["nights"],
+                             seed=secrets.randbelow(2**31), schedule=[], status="proposed", extensions=0)
+            session.add(exp)
+            session.flush()
+            message = self._activate(session, exp)
+            if exp.status != "active":
+                session.rollback()
+                return Outcome("already", message)
+            return Outcome("started", message)
+
+    def decline(self, token: ActionToken) -> Outcome:
+        with self.session_factory() as session:
+            exp = self._find(session, token.user_id, status="proposed", proposed_on=token.day)
+            if exp is not None:
+                exp.status, exp.ended_at = "declined", self.clock()
+                session.commit()
+        return Outcome("declined_exp", "No problem. This experiment will not be suggested again for a month.")
+
+    def decide(self, token: ActionToken, step: str) -> Outcome:
+        """keep / drop a finished experiment, or extend it by a few more pairs of nights."""
+        from datetime import timedelta
+
+        from src.experiments.design import make_schedule
+        from src.experiments.presets import EXTENSION_NIGHTS, MAX_EXTENSIONS
+        with self.session_factory() as session:
+            exp = self._find(session, token.user_id, start_day=token.day)
+            if exp is None or exp.status != "completed":
+                return Outcome("already", "This experiment is not waiting for a decision.")
+            if exp.next_step:
+                return Outcome("already", f"Already decided: {exp.next_step}.")
+            if step in ("keep", "drop"):
+                exp.next_step = step
+                session.commit()
+                return Outcome("decided", "Kept. Future suggestions will take this habit into account."
+                               if step == "keep" else "Dropped. Nothing else to do.")
+            if (exp.extensions or 0) >= MAX_EXTENSIONS:
+                return Outcome("already", "This experiment has already been extended once.")
+            if self._find(session, token.user_id, status="active") is not None:
+                return Outcome("already", "Another experiment is already running.")
+            today, hour = self._user_today(session, token.user_id)
+            start = today + timedelta(days=1 if hour >= 18 else 0)
+            pairs = max(s["pair"] for s in exp.schedule) + 1
+            extra = make_schedule(start, EXTENSION_NIGHTS, exp.seed + 1 + (exp.extensions or 0))
+            exp.schedule = exp.schedule + [dict(s, pair=s["pair"] + pairs) for s in extra]
+            exp.nights += EXTENSION_NIGHTS
+            exp.extensions = (exp.extensions or 0) + 1
+            exp.status, exp.result, exp.ended_at = "active", None, None
+            session.commit()
+            return Outcome("decided", f"Extended by {EXTENSION_NIGHTS} nights, starting "
+                           f"{'tonight' if start == today else 'tomorrow'}. The result will use all nights.")
+
+    def stop_experiment(self, token: ActionToken) -> Outcome:
+        with self.session_factory() as session:
+            exp = self._find(session, token.user_id, start_day=token.day, status="active")
+            if exp is None:
+                return Outcome("already", "No running experiment to stop.")
+            exp.status, exp.ended_at = "stopped", self.clock()
+            session.commit()
+        return Outcome("stopped", "Stopped. Its data stays stored; no result is computed for a stopped experiment.")
+
+    def experiment_options(self, token: ActionToken) -> tuple[list[dict], bool]:
+        """Presets for the browse page, and whether an experiment is already running."""
+        from src.experiments.presets import PRESETS
+        with self.session_factory() as session:
+            running = self._find(session, token.user_id, status="active") is not None
+        return [dict(key=k, **{f: p[f] for f in ("title", "question", "treatment", "nights")})
+                for k, p in PRESETS.items()], running

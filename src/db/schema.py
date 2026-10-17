@@ -29,6 +29,10 @@ ADDED_COLUMNS = [
     ("daily_plans", "ai_status", "VARCHAR(16)"),
     ("daily_plans", "ai_problems", "JSONB"),
     ("daily_plans", "evidence", "JSONB"),
+    ("experiments", "proposed_on", "DATE"),
+    ("experiments", "reason", "TEXT"),
+    ("experiments", "next_step", "VARCHAR(16)"),
+    ("experiments", "extensions", "INTEGER"),
 ]
 
 # daily_plans.status (proposed|accepted|adjusted|declined) was split into response and

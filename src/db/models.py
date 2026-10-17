@@ -246,7 +246,12 @@ class Experiment(Base):
     nights: Mapped[int] = mapped_column(Integer)
     seed: Mapped[int] = mapped_column(BigInteger)                  # makes the random schedule reproducible
     schedule: Mapped[list] = mapped_column(JSONB)                  # [{"day": "2026-10-18", "arm": "treatment"}, ...]
-    status: Mapped[str] = mapped_column(String(16), default="active")  # active | completed | stopped
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    # proposed (by the AI, waiting for Start) | declined | active | completed | stopped
+    proposed_on: Mapped[date | None] = mapped_column(Date)         # set when the AI proposed it
+    reason: Mapped[str | None] = mapped_column(Text)               # the AI's checked reason for proposing it
+    next_step: Mapped[str | None] = mapped_column(String(16))      # keep | drop (extend reopens the experiment)
+    extensions: Mapped[int | None] = mapped_column(Integer, default=0)
     result: Mapped[dict | None] = mapped_column(JSONB)             # analysis, written once at the end
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

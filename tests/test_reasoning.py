@@ -140,3 +140,16 @@ def test_ai_must_not_contradict_a_control_night():
     out = ai(action=dict(type="calendar_block", title="Wind down: screens off", start="22:40", minutes=40))
     r = reason(case, s, "key", call=lambda *a: json.dumps(out))
     assert r["status"] == "rejected" and "conflicts with experiment" in r["problems"]
+
+
+def test_experiment_proposal_is_checked_but_never_blocks_the_plan():
+    s, case = setup()
+    case["constraints"]["experiment_options"] = [dict(preset="screens_off_30", title="No screens 30 minutes "
+                                                      "before bed", question="?", nights=14)]
+    good = ai(experiment_proposal=dict(preset="screens_off_30", why="Sleep has fallen short on most nights.",
+                                       evidence=["E1"]))
+    r = reason(case, s, "key", call=lambda *a: json.dumps(good))
+    assert r["status"] == "ok" and r["proposal"]["preset"] == "screens_off_30" and r["proposal"]["nights"] == 14
+    bad = ai(experiment_proposal=dict(preset="cold_plunge", why="Try it.", evidence=["E1"]))
+    r = reason(case, s, "key", call=lambda *a: json.dumps(bad))
+    assert r["status"] == "ok" and r["proposal"] is None and r["problems"][0].startswith("proposal dropped")

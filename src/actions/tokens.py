@@ -13,7 +13,8 @@ import time
 from dataclasses import dataclass
 from datetime import date
 
-ACTIONS = ("add", "change", "dismiss", "undo", "not_useful", "adhere_yes", "adhere_no")
+ACTIONS = ("add", "change", "dismiss", "undo", "not_useful", "adhere_yes", "adhere_no",
+           "exp_start", "exp_decline", "exp_keep", "exp_extend", "exp_drop", "exp_stop", "exp_browse")
 ALIASES = {"accept": "add", "adjust": "change", "skip": "dismiss"}
 
 

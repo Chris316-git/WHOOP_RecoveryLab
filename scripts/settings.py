@@ -34,6 +34,8 @@ def main() -> None:
     onoff = parser.add_mutually_exclusive_group()
     onoff.add_argument("--on", dest="enabled", action="store_true", default=None)
     onoff.add_argument("--off", dest="enabled", action="store_false")
+    parser.add_argument("--resend", action="store_true",
+                        help="forget that today's report was sent, so the scheduled job sends it again")
     args = parser.parse_args()
 
     users = get_whoop_store().list_users()
@@ -55,6 +57,8 @@ def main() -> None:
         changes["wait_for_sleep"] = args.wait
     if args.enabled is not None:
         changes["report_enabled"] = args.enabled
+    if args.resend:
+        changes["last_report_on"] = None
 
     ensure_schema(engine)
     with SessionLocal() as session:

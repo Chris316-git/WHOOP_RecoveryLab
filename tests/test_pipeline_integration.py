@@ -97,7 +97,8 @@ def test_send_now_emails_and_records_the_plan(factory):
         plan = s.get(DailyPlan, (USER, TODAY))
         assert plan is not None and plan.focus in ("none", "go_hard", "lower_intensity",
                                                    "prioritize_sleep", "recover_between")
-        assert s.get(UserSettings, USER).last_report_on == TODAY
+        settings = s.get(UserSettings, USER)
+        assert settings is None or settings.last_report_on is None   # a manual send never cancels the scheduled one
 
 
 def test_scheduled_run_respects_time_and_sends_once(factory):

@@ -219,7 +219,8 @@ class DailyPipeline:
         if status == "open":
             summary["actions"] = self.action_links(user_id, summary, now)
         self.deliver(summary, run.notices)
-        self.mark_sent(user_id, now)
+        if mode == "scheduled":  # a manual send (make daily-now) is a test; it never cancels the real one
+            self.mark_sent(user_id, now)
         run.outcome = "sent"
         return run
 

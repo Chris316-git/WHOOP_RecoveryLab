@@ -1,4 +1,4 @@
-# Render blueprint for the action endpoint (Accept / Adjust / Skip links in the daily email).
+# Render blueprint for the endpoint behind the email links (Add to calendar, Change time, Dismiss, Undo).
 # In Render: New > Blueprint > connect this repository, then fill in the secret values.
 # The free plan sleeps when idle, so the first click after a while can take ~30-60 seconds.
 services:

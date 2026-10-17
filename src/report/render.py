@@ -403,6 +403,13 @@ def _focus(summary: dict) -> str:
                       f'<span style="color:{MUTED}"> &nbsp;&middot;&nbsp; </span>'
                       f'<span style="font-size:14px;color:{INK_2}">{escape(b["title"])}</span></td></tr></table>')
     actions_html = _action_buttons(summary.get("actions"))
+    d = summary.get("decided")
+    if d:   # a resend after the user already acted today: say so instead of showing buttons again
+        b = d.get("block")
+        text = (f"Already on your calendar today: {b['start']}-{b['end']} {b['title']}."
+                if d.get("calendar_status") == "scheduled" and b else "You already responded to today's plan.")
+        actions_html = f'<div style="font-size:13px;color:{INK_2};margin-top:10px">{escape(text)}</div>'
+
     small = [x for x in [*f.get("alternatives", []), f.get("note")] if x]   # the caveat is in the footer
     small_html = "".join(f'<div style="font-size:13px;color:{MUTED};margin-top:8px;line-height:1.45">'
                          f'{escape(x)}</div>' for x in small)

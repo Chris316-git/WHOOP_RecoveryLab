@@ -18,7 +18,9 @@ def event_body(day: date, block: dict, tz: str, focus_title: str, reasons: list[
     for anyone looking at your availability."""
     zone = ZoneInfo(tz)
     h, m = map(int, block["start"].split(":"))
-    start = datetime.combine(day, time(h, m), zone)
+    if h < 5:   # e.g. a wind-down starting at 00:15 belongs to the night after `day`
+        day = day + timedelta(days=1)
+    start = datetime.combine(day, time(h % 24, m), zone)
     end = start + timedelta(minutes=int(block["minutes"]))
     why = "\n".join(f"- {r}" for r in reasons)
     return {

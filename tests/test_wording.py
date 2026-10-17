@@ -20,7 +20,7 @@ def fake(reply):
 
 def test_input_is_compact_and_computed():
     data = wording_input(SUMMARY)
-    assert data["suggested_block"]["start"] == "16:00" and data["recovery_percent"] == 54
+    assert data["suggested_block"]["start"] == "16:00" and data["recovery_percent"] == "54"
     assert set(data) <= {"focus", "confidence", "template_headline", "reasons", "pointing_the_other_way",
                          "recovery_percent", "recovery_zone", "suggested_block", "yesterday"}
     assert wording_input(dict(SUMMARY, focus=dict(focus="none", reasons=[]))) is None

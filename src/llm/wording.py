@@ -47,7 +47,7 @@ def wording_input(summary: dict) -> dict | None:
         template_headline=f.get("headline"),
         reasons=f["reasons"][:4],
         pointing_the_other_way=(f.get("counter") or [])[:2],
-        recovery_percent=summary["metrics"][0]["value"],
+        recovery_percent=None if summary["metrics"][0]["value"] is None else f"{summary['metrics'][0]['value']:g}",
         recovery_zone=summary.get("recovery_zone"),
     )
     if block:

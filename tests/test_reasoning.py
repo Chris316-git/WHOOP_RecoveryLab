@@ -125,3 +125,10 @@ def test_sleep_focus_needs_a_wind_down_block_and_short_reasons():
     assert "banned wording" in run(ai(headline="Your body looks under-recovered."))["problems"]
     s, case = setup()
     assert case["constraints"]["default_target_bedtime"] == "23:00"
+
+
+def test_wind_down_after_midnight_is_tonight():
+    r = run(ai(headline="Start winding down a little earlier than your 00:10 bedtimes.", hypothesis=None,
+               action=dict(type="calendar_block", title="Wind down", start="00:10", minutes=40)))
+    assert r["status"] == "ok", r["problems"]
+    assert r["focus"]["block"]["start"] == "00:10" and r["focus"]["block"]["end"] == "00:50"

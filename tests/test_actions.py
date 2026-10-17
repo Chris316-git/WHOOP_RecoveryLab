@@ -79,3 +79,9 @@ def test_settings_drop_quotes_pasted_from_env_files():
     from src.settings import Settings
     s = Settings.from_env({"DATABASE_URL": ' "postgresql://u:p@h/db" ', "ACTION_SIGNING_KEY": "'abc'"})
     assert s.database_url == "postgresql://u:p@h/db" and s.action_signing_key == "abc"
+
+
+def test_event_after_midnight_goes_on_the_next_date():
+    body = event_body(DAY, dict(start="00:15", minutes=45, title="Wind down"), "America/Los_Angeles", "x", [],
+                      busy=False)
+    assert body["start"]["dateTime"] == "2026-10-17T00:15:00-07:00"

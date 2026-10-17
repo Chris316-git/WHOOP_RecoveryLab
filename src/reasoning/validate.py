@@ -99,7 +99,10 @@ def validate(out: dict, case: dict, summary: dict) -> tuple[dict | None, list[st
         if not _HHMM.match(start) or not isinstance(length, int) or bad_title:
             problems.append("action format")
         else:
-            s, e = _minutes(start), _minutes(start) + length
+            s = _minutes(start)
+            if ft == "prioritize_sleep" and s < 12 * 60:   # a wind-down after midnight belongs to tonight
+                s += 1440
+            e = s + length
             now = _minutes(case["now"]) if case.get("now") else None
             bed = _minutes(cons["usual_bedtime"]) if cons.get("usual_bedtime") else 23 * 60
             bed = bed + 1440 if bed < 12 * 60 else bed

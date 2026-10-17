@@ -201,6 +201,8 @@ class DailyPipeline:
         with self.session_factory() as session:
             existing = session.get(DailyPlan, (int(user_id), now.date()))
             if existing is not None and (existing.response or existing.calendar_status):
+                summary["decided"] = dict(response=existing.response, calendar_status=existing.calendar_status,
+                                          block=existing.final_block)
                 return "decided"
             rule = summary.get("rule_focus") or f
             r = summary.get("reasoning") or {}

@@ -34,6 +34,8 @@ class Settings:
     smtp: SmtpSettings = field(default_factory=SmtpSettings)
     public_base_url: str = ""                 # where the action endpoint is hosted, e.g. https://x.onrender.com
     action_signing_key: str = ""              # secret for signing the links in the email
+    anthropic_api_key: str = ""               # optional: friendlier wording of the daily focus
+    llm_model: str = "claude-haiku-5-5"
 
     @property
     def actions_enabled(self) -> bool:
@@ -55,6 +57,8 @@ class Settings:
                               user=get("SMTP_USER"), password=get("SMTP_PASSWORD")),
             public_base_url=get("PUBLIC_BASE_URL").rstrip("/"),
             action_signing_key=get("ACTION_SIGNING_KEY"),
+            anthropic_api_key=get("ANTHROPIC_API_KEY"),
+            llm_model=get("LLM_MODEL", "claude-haiku-5-5"),
         )
 
     def require(self, name: str) -> str:

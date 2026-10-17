@@ -39,3 +39,4 @@ jobs:
           REPORT_EMAIL_TO: ${{ secrets.REPORT_EMAIL_TO }}
           PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
           ACTION_SIGNING_KEY: ${{ secrets.ACTION_SIGNING_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

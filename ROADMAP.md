@@ -104,7 +104,7 @@ not"; slot finding; the email card; optional one-tap calendar actions with Undo
 (`src/actions/`). Simplified after the first version: no "Accept" (accept what, the analysis
 or a promise?), no confirmation step, no reasons asked on skip, and no buttons on days with
 nothing to change. Still open from step 3: moving a scheduled block
-automatically when a new meeting conflicts. Next: step 4 (LLM wording).
+automatically when a new meeting conflicts. Step 4 (LLM wording) is done (`src/llm/wording.py`).
 
 **1. Choose today's focus (deterministic).** Code builds candidate focuses and scores each one
 by *how far today deviates from your baseline × whether you can act on it today*:
@@ -159,7 +159,7 @@ sleep need).
   readiness drops. Blocks the user moved by hand are never touched, and events are updated
   in place, never duplicated.
 
-**4. Wording.** The LLM turns the computed focus, reasons and slot into a short, friendly
+**4. Wording (done).** The LLM turns the computed focus, reasons and slot into a short, friendly
 message (e.g. "Good morning: your recovery is below your recent level and yesterday was a
 hard day, so today should be light. You are free at 17:30. Shall I add a 30-minute easy
 session?"). Guardrails: the numeric consistency check, structured input only, and a
@@ -287,8 +287,8 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 ## Order of work
 
 1. ~~**Phase 1 additions:** trends, load, weekday patterns.~~ Done.
-2. **Phase 2:** ~~focus selection, slot finding, the email card, optional calendar actions~~
-   (done); next: the LLM wording.
+2. **Phase 2:** ~~focus selection, slot finding, the email card, optional calendar actions,
+   LLM wording~~ (done); still open: moving a scheduled block when a new meeting conflicts.
 3. **Phase 3:** ~~response log, completion checks from data~~ (done); next: learn from
    repeated dismissals and moved blocks; "did it help" over many days, labeled as association.
 4. **Phase 4:** calibrate and merge the engine; presets; pre-registration; data-driven

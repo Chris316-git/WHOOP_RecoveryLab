@@ -110,8 +110,8 @@ def render_text(summary: dict, notices: list[str]) -> str:
     if f:
         conf = f" ({f['confidence']} confidence)" if f.get("confidence") else ""
         lines += [f"TODAY'S FOCUS: {f['title']}{conf}"]
-        if f.get("headline"):
-            lines.append(f"  {f['headline']}")
+        if f.get("message") or f.get("headline"):
+            lines.append(f"  {f.get('message') or f['headline']}")
         lines += [f"  - because {r}" for r in f["reasons"]]
         lines += [f"  - on the other hand, {r}" for r in f.get("counter", [])]
         if f.get("block"):
@@ -388,8 +388,9 @@ def _focus(summary: dict) -> str:
         chip = (f'<span style="display:inline-block;margin-left:8px;vertical-align:middle;background:#f3f4f6;'
                 f'border-radius:999px;padding:3px 9px;font-size:12px;color:{INK_2};font-weight:500">'
                 f'{dots}&nbsp; {CONFIDENCE_LABEL[f["confidence"]]}</span>')
-    headline = (f'<div style="font-size:15px;color:{INK_2};margin-top:6px">{escape(f["headline"])}</div>'
-                if f.get("headline") else "")
+    lead = f.get("message") or f.get("headline")   # the LLM's wording when it passed the checks
+    headline = (f'<div style="font-size:15px;color:{INK_2};margin-top:6px;line-height:1.5">{escape(lead)}</div>'
+                if lead else "")
     why = (_label("Why") + _bullets(f["reasons"], INK_2)) if f.get("reasons") else ""
     other = (_label("Pointing the other way") + _bullets(f["counter"], MUTED)) if f.get("counter") else ""
     block_html = ""

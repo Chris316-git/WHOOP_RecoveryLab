@@ -136,3 +136,16 @@ def test_outcomes_missing_data_are_rechecked_later(factory):
     make_pipeline(factory, []).run_user(str(USER), mode="now")
     with factory() as s:
         assert s.get(DailyPlan, (USER, two_days_ago)).outcome == "done"   # in bed at 23:00, target 23:00
+
+
+def test_wording_falls_back_and_logs_status_only(factory):
+    import json as _json
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    reply = "Zebrafish advice: rest for 999 minutes."                     # invented number, unique marker word
+    p.wording_call = lambda key, model, data: _json.dumps({"message": reply})
+    run = p.run_user(str(USER), mode="now")
+    assert run.outcome == "sent"
+    assert not any("Zebrafish" in step for step in run.steps)            # never the text in logs
+    assert any(step.startswith("wording: ") for step in run.steps)    # status only (template, skipped, ...)
+    assert "Zebrafish" not in outbox[0][2]                               # the template went out instead

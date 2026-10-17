@@ -74,6 +74,7 @@ class DailyPipeline:
     sender: Sender | None = None                     # defaults to SMTP from settings
     clock: Clock = _system_clock
     preview_dir: Path | None = None
+    wording_call: Callable | None = None             # LLM transport; None = the Claude API (tests inject a fake)
 
     # ---- stage 0: context ----
     def context(self, user_id: str) -> tuple[str, ReportSchedule]:
@@ -134,6 +135,19 @@ class DailyPipeline:
                 summary["reviews"][k] = review
         summary["yesterday"] = summary["reviews"].get(1)
         return summary
+
+    # ---- stage 2b: wording ----
+    def word(self, summary: dict, run: UserRun) -> None:
+        """Friendlier wording of the focus by the LLM, with numeric checks and a template fallback.
+        Only the status is logged, never the text."""
+        from src.llm.wording import word_focus
+        if not self.settings.anthropic_api_key and self.wording_call is None:
+            return
+        message, status = word_focus(summary, self.settings.anthropic_api_key or "test", self.settings.llm_model,
+                                     call=self.wording_call)
+        if message:
+            summary["focus"]["message"] = message
+        run.steps.append(f"wording: {status}")
 
     # ---- stage 3: deliver ----
     def deliver(self, summary: dict, notices: list[str]) -> None:
@@ -237,6 +251,7 @@ class DailyPipeline:
                 run.outcome, run.detail = "waiting", reason
                 return run
             run.detail = reason
+        self.word(summary, run)
         if mode == "preview":
             path = self.save_preview(user_id, summary, run.notices)
             run.outcome, run.detail = "previewed", str(path)

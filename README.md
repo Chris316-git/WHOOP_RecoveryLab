@@ -42,6 +42,7 @@ Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / 
 - [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time between 07:00 and midnight
 - [x] Suggestions built from your own workout history: the easy or hard version of the activities you actually do, at your usual time
 - [x] Optional one-tap "Add to calendar" (with Undo) for focuses that need a time block, on a dedicated "Recovery Lab" calendar
+- [x] Optional friendlier wording of the focus by Claude, with a numeric consistency check and a template fallback
 - [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
 - [ ] Feedback loop, the rest: did it help, over many days?
 - [ ] Personal experiment engine: pre-registered designs, data-driven length, report card, next step
@@ -156,6 +157,7 @@ src/
   notify/      Email delivery
   settings.py  Runtime settings as one immutable object (from .env / environment)
   actions/     Add to calendar / Change time / Dismiss / Undo: signed links, calendar writes, pages
+  llm/         Optional wording of the daily focus: compact input, numeric check, template fallback
   api/         FastAPI app: WHOOP login flow and the action endpoint
 scripts/       Thin command-line entry points (daily.py runs the pipeline)
 .github/       GitHub Actions workflow for the daily job

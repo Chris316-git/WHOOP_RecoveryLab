@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Recovery Lab** · Effective date: October 16, 2026
+**Recovery Lab** · Effective date: October 18, 2026
 
 Recovery Lab is an open-source tool that analyzes your own wearable and calendar data to
 run personal (N-of-1) experiments and send you a daily summary. This policy explains what
@@ -107,11 +107,16 @@ Recovery Lab sends data only to the services needed to run it:
 | GitHub Actions | Run the daily job | Encrypted credentials and database connection (as secrets) |
 | Email provider (e.g. Gmail) | Deliver the daily summary | The contents of the summary |
 | Web host (e.g. Render) | Run the endpoint behind the email links | Database connection and keys (as secrets); your clicks |
+| Anthropic API (optional) | Word the daily focus | The computed focus summary described below |
 
-**Language model (planned):** a later version will use the Anthropic API to word
-experiment designs and explanations. Only aggregated statistics computed by Recovery Lab
-would be sent, not raw records or calendar data. This policy will be updated before that
-feature is turned on.
+**Language model (optional):** if the operator sets an Anthropic API key, the day's focus is
+reworded by a Claude model. What is sent is only what Recovery Lab already computed for that
+email: the focus, its short reasons (which include summary numbers such as your 7-day HRV
+range, yesterday's strain or this week's sleep shortfall), today's recovery percentage, the
+suggested time block and yesterday's one-line outcome. Raw records, calendar events, your name
+and your email address are never sent. The reply is checked in code (every number must come
+from that input) and replaced by a fixed template if anything looks wrong. Without a key,
+nothing is sent. Anthropic's handling of API data is described in its own privacy policy.
 
 ## Retention
 

@@ -7,6 +7,10 @@ structured **N-of-1 experiments** on your wearable data to estimate the *causal*
 effect of a habit change (e.g. "no caffeine after 2pm") on sleep and recovery,
 and schedules its recommendations around the time you actually have free.
 
+**[Live demo](https://chris316-git.github.io/WHOOP_RecoveryLab/)**: one day of the real pipeline on
+the author's own data (morning brief, the AI's evidence file and reply, the validator catching
+tampered replies, the running experiment, and simulation checks of the statistics).
+
 ## What makes it different
 
 | | Wearable app | Chatbot + exported data | Recovery Lab |
@@ -250,6 +254,9 @@ runs = pipeline.run_all(mode="preview")   # or run_user(user_id, mode="now")
 All data stays in the database you configure. Credentials live in `.env` and `.tokens/`
 (both git-ignored) or, for the scheduled job, encrypted in the database with a key that is
 kept only in `.env` and GitHub Secrets. The daily email goes only to the address you set.
+The public demo page (`make demo`, written to `docs/`) shows one day of the author's own
+numbers by choice: calendar events only as busy/free time, no action links, and the page is
+scanned for email addresses and keys before it is written.
 See [PRIVACY.md](PRIVACY.md) for exactly what is stored and how to delete it. This project is not affiliated with WHOOP and is not medical advice.
 
 ## License

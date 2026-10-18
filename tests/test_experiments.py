@@ -4,6 +4,7 @@ from datetime import date
 from src.experiments.analysis import analyze, explain, pair_differences, randomization_p, summarize, t_interval
 from src.experiments.design import arm_on, make_schedule
 from src.experiments.presets import preset
+from src.experiments.simulation import calibration, simulate
 
 START = date(2026, 10, 18)
 
@@ -35,16 +36,6 @@ def test_pairs_and_per_protocol():
               dict(pair=2, arm="treatment", adherence=None, y=None), dict(pair=2, arm="control", y=70)]
     assert pair_differences(nights, "y") == [5.0, -2.0]
     assert pair_differences(nights, "y", per_protocol=True) == [5.0]
-
-
-def simulate(effect, rng, pairs=7, phi=0.5, sd=6.0):
-    """AR(1) nightly outcomes (autocorrelated, like real sleep), randomized paired schedule."""
-    sched = make_schedule(START, 2 * pairs, seed=rng.randrange(10**9))
-    x, nights = 0.0, []
-    for s in sched:
-        x = phi * x + rng.gauss(0, sd * (1 - phi ** 2) ** 0.5)
-        nights.append(dict(s, y=78 + x + (effect if s["arm"] == "treatment" else 0)))
-    return pair_differences(nights, "y")
 
 
 def test_simulation_false_positives_and_coverage():
@@ -162,3 +153,8 @@ def test_five_pairs_can_never_be_significant_so_six_is_the_minimum():
     assert randomization_p([5.0] * 5) == 2 / 32 > 0.05
     assert randomization_p([5.0] * 6) == 2 / 64 < 0.05
     assert summarize([5, 6, 7, 5, 6], 3)["verdict"] == "not_enough_data"
+
+
+def test_calibration_helper_reports_rates():
+    c = calibration(sims=300)
+    assert c["pairs"] == 7 and c["false_positive_rate"] <= 0.09 and c["coverage"] >= 0.9

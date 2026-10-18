@@ -102,6 +102,12 @@ including the Limited Use requirements.
   messages. No health or calendar values are written to them.
 - **Email:** the daily summary is sent only to the address the operator configures, using
   the operator's email provider.
+- **Public demo page (optional):** `make demo` writes `docs/index.html`, which GitHub Pages
+  publishes. It is generated only when the operator runs it, and only for the operator's own
+  account: one day's summary numbers, the evidence file and AI reply, and the running
+  experiment's nights. Calendar events appear only as busy/free time; there are no action
+  links, ids or email addresses, and the script refuses to write the page if it finds any.
+  Deleting `docs/` and pushing removes it. Never run it for another person's account.
 
 ## Third-party services
 

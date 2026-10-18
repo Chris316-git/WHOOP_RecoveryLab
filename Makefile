@@ -1,4 +1,4 @@
-.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings test
+.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings demo test
 
 setup:            ## Install dependencies
 	uv sync
@@ -37,6 +37,9 @@ report-preview:   ## Sync everything and save today's report to data/reports/ (n
 
 settings:         ## Show or change report settings, e.g. make settings ARGS="--time 10:30"
 	uv run python scripts/settings.py $(ARGS)
+
+demo:             ## Write the public demo page (docs/index.html) from today's run; no email, nothing stored
+	uv run python scripts/demo.py $(ARGS)
 
 test:
 	uv run pytest -q

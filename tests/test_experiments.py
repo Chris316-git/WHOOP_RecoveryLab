@@ -156,3 +156,9 @@ def test_ai_explanation_is_checked():
     assert status == "llm" and msg == good
     bad = "Your sleep improved by 42 points, which proves screens cause insomnia."
     assert explain_result(result, spec, "k", "m", call=lambda *a: _json.dumps({"message": bad}))[0] is None
+
+
+def test_five_pairs_can_never_be_significant_so_six_is_the_minimum():
+    assert randomization_p([5.0] * 5) == 2 / 32 > 0.05
+    assert randomization_p([5.0] * 6) == 2 / 64 < 0.05
+    assert summarize([5, 6, 7, 5, 6], 3)["verdict"] == "not_enough_data"

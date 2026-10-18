@@ -20,7 +20,7 @@ import math
 import random
 from itertools import product
 
-MIN_PAIRS = 5
+MIN_PAIRS = 6   # with 5 pairs the smallest possible two-sided randomization p is 2/32 > 0.05
 ALPHA = 0.05
 MC_DRAWS = 20000
 # Two-sided 97.5% quantiles of Student's t for df 1..30 (beyond 30, 1.96 is close enough).

@@ -38,6 +38,9 @@ class Settings:
     llm_model: str = "claude-haiku-5-5"
     reasoning_mode: str = "ai"                # ai: show the AI's plan when it passes the checks; shadow; off
     reasoning_model: str = "claude-sonnet-5-5"
+    whoop_client_secret: str = ""             # also signs WHOOP's webhooks
+    github_dispatch_token: str = ""           # web host only: starts the daily workflow on a WHOOP webhook
+    github_repo: str = ""                     # e.g. owner/repo
 
     @property
     def actions_enabled(self) -> bool:
@@ -63,6 +66,9 @@ class Settings:
             llm_model=get("LLM_MODEL", "claude-haiku-5-5"),
             reasoning_mode=get("REASONING_MODE", "ai").lower(),
             reasoning_model=get("REASONING_MODEL", "claude-sonnet-5-5"),
+            whoop_client_secret=get("WHOOP_CLIENT_SECRET"),
+            github_dispatch_token=get("GITHUB_DISPATCH_TOKEN"),
+            github_repo=get("GITHUB_REPO"),
         )
 
     def require(self, name: str) -> str:

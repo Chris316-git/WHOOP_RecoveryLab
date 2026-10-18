@@ -22,3 +22,10 @@ services:
         sync: false
       - key: ACTION_SIGNING_KEY
         sync: false
+      # WHOOP webhook -> start the daily workflow right after last night is scored (README: Instant delivery)
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_DISPATCH_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        value: Chris316-git/WHOOP_RecoveryLab

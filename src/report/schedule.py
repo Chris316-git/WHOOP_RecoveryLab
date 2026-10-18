@@ -1,15 +1,16 @@
 """When to send each user's daily report. Pure logic, no I/O.
 
-The scheduled job wakes up every 30 minutes. For each user it sends at most one report
-per local day: not before `report_time`, and (if `wait_for_sleep`) only once last night's
-sleep has been scored by WHOOP, with `latest_time` as a deadline so a late or missing
-score never means no report.
+The job runs when WHOOP reports a new sleep or recovery (webhook, see src/api/webhooks.py)
+and every 30 minutes as a fallback. For each user it sends at most one report per local day:
+not before `report_time`, and (if `wait_for_sleep`) only once last night's sleep has been
+scored by WHOOP, with `latest_time` as a deadline so a late or missing score never means no
+report. With the webhook, the email arrives a minute or two after the score.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-DEFAULT_REPORT_TIME = time(10, 0)
+DEFAULT_REPORT_TIME = time(5, 0)   # earliest; the email waits for the sleep score
 DEFAULT_LATEST_TIME = time(13, 0)
 
 

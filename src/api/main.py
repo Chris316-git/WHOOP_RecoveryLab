@@ -9,8 +9,8 @@ it returns a page that submits a POST by itself (one tap for the user, nothing f
 scanner that does not run scripts). Results offer Undo.
 """
 import httpx
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from src import config
 from src.ingestion import whoop_auth
@@ -200,6 +200,43 @@ def action_submit(token: str, request: Request, choice: int | None = None, prese
         not_useful_url=_link(t, "not_useful", key) if outcome.ask_not_useful else None)))
 
 
+# ---------------- WHOOP webhook: email as soon as last night is scored ----------------
+
+def _webhook_config(request: Request):
+    """(webhook secret, start-the-workflow callable); tests set app.state.webhook_* instead."""
+    state = request.app.state
+    if not hasattr(state, "webhook_secret"):
+        from src.settings import Settings
+        s = Settings.from_env()
+        state.webhook_secret = s.whoop_client_secret
+
+        def start() -> None:
+            from src.api.webhooks import dispatch
+            if not (s.github_dispatch_token and s.github_repo):
+                print("webhook: GITHUB_DISPATCH_TOKEN or GITHUB_REPO not set; nothing started")
+                return
+            print(f"webhook: workflow dispatch -> {dispatch(s.github_dispatch_token, s.github_repo, httpx.post)}")
+        state.webhook_start = start
+    return state.webhook_secret, state.webhook_start
+
+
+@app.post("/webhooks/whoop")
+async def whoop_webhook(request: Request, background: BackgroundTasks):
+    """Check the signature, answer 204 right away (WHOOP asks for a fast reply), then start
+    the daily workflow in the background. Only the event type is logged."""
+    from src.api.webhooks import parse_event, should_dispatch, valid_signature
+    secret, start = _webhook_config(request)
+    body = await request.body()
+    if not valid_signature(secret, request.headers.get("X-WHOOP-Signature-Timestamp"), body,
+                           request.headers.get("X-WHOOP-Signature")):
+        raise HTTPException(401, "invalid signature")
+    event = parse_event(body)
+    if event and should_dispatch(event):
+        background.add_task(start)
+    print(f"webhook: {event.get('type') if event else 'unreadable'}")
+    return Response(status_code=204)
+
+
 @app.get("/healthz")
 def healthz(deep: bool = False):
     """Liveness. With ?deep=1, also check the settings and the database connection. Only
@@ -211,7 +248,8 @@ def healthz(deep: bool = False):
     from src.settings import Settings
     s = Settings.from_env()
     out = {"ok": True, "database_url_set": bool(s.database_url), "signing_key_set": bool(s.action_signing_key),
-           "encryption_key_set": bool(s.token_encryption_key)}
+           "encryption_key_set": bool(s.token_encryption_key), "webhook_secret_set": bool(s.whoop_client_secret),
+           "dispatch_token_set": bool(s.github_dispatch_token and s.github_repo)}
     try:
         from src.db.session import default_session_factory
         with default_session_factory()() as session:

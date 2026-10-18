@@ -93,12 +93,14 @@ One-time setup:
    `SMTP_PASSWORD`, `REPORT_EMAIL_TO`.
 5. Actions tab -> "Daily sync and report" -> Run workflow, to test it once.
 
-**Choosing when it arrives.** The job checks every 30 minutes and sends at most one report
-per day, in your own time zone: not before your chosen time and, by default, only after
-WHOOP has scored last night's sleep (with a deadline, so a late score never means no email).
+**Choosing when it arrives.** By default the email goes out as soon as WHOOP has scored
+last night's sleep: WHOOP calls a webhook on the web host, which starts the job right away
+(see "Instant delivery" below). The job also runs every 30 minutes as a fallback. It sends
+at most one report per day, in your own time zone, not before your earliest time, and with a
+deadline so a late score never means no email.
 
 ```bash
-make settings                          # show current settings (default: after 10:00, by 13:00)
+make settings                          # show current settings (default: after 05:00, by 13:00)
 make settings ARGS="--time 10:30"      # earliest send time
 make settings ARGS="--latest 12:00"    # send by then even if sleep is not scored yet
 make settings ARGS="--no-wait"         # send at --time without waiting for the score
@@ -110,6 +112,24 @@ make settings ARGS="--sports golf,running"  # activities to suggest; "auto" lear
 `make daily-now` sends immediately; `make report-preview` builds the report into
 `data/reports/` without sending it. The "Run workflow" button on GitHub also sends immediately.
 The job logs never print health or calendar values, because logs of a public repo are public.
+
+**Instant delivery (WHOOP webhook).** The free web host blocks outgoing email, so it does
+not send anything itself: it checks the webhook's signature (`X-WHOOP-Signature`, an HMAC of
+the timestamp and body with your WHOOP client secret) and starts the GitHub workflow, which
+syncs and emails as usual. All runs share one queue, so two syncs never race on WHOOP's
+rotating refresh token.
+
+1. GitHub -> Settings (your account) -> Developer settings -> Fine-grained tokens: a token
+   for this repository only, with the permission *Actions: Read and write*.
+2. Render -> the service -> Environment: add `WHOOP_CLIENT_SECRET`, `GITHUB_DISPATCH_TOKEN`
+   (that token) and `GITHUB_REPO` (`owner/repo`).
+3. WHOOP Developer Dashboard -> your app -> Webhooks: add
+   `https://<your-service>.onrender.com/webhooks/whoop`, model version v2.
+4. Check `https://<your-service>.onrender.com/healthz?deep=1`: `webhook_secret_set` and
+   `dispatch_token_set` should be true.
+
+If the web host is asleep, WHOOP's first delivery can time out; WHOOP retries for about an
+hour, and the 30-minute schedule still catches anything missed.
 GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it
 from the Actions tab if that happens.
 

@@ -103,8 +103,8 @@ def test_send_now_emails_and_records_the_plan(factory):
 
 def test_scheduled_run_respects_time_and_sends_once(factory):
     outbox = []
-    early = make_pipeline(factory, outbox, hour=8).run_user(str(USER))
-    assert early.outcome == "skipped" and not outbox            # default report time is 10:00
+    early = make_pipeline(factory, outbox, hour=4).run_user(str(USER))
+    assert early.outcome == "skipped" and not outbox            # default earliest time is 05:00
     first = make_pipeline(factory, outbox, hour=11).run_user(str(USER))
     again = make_pipeline(factory, outbox, hour=12).run_user(str(USER))
     assert first.outcome == "sent" and again.outcome == "skipped" and len(outbox) == 1

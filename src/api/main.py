@@ -67,6 +67,16 @@ RESULT_TITLES = {"started": "Experiment started", "declined_exp": "Not now", "de
                  "nothing": "Nothing to do"}
 
 
+def _ensure_schema(session_factory) -> None:
+    """Add tables and columns from newer versions (idempotent). The web host may start on new
+    code before the daily job has migrated the database."""
+    from src.db.schema import ensure_schema
+    try:
+        ensure_schema(session_factory.kw["bind"])
+    except Exception as exc:
+        print(f"schema check failed: {type(exc).__name__}")
+
+
 def _actions(request: Request):
     """The ActionService and signing key, created on first use (tests can set app.state.*)."""
     state = request.app.state
@@ -75,7 +85,9 @@ def _actions(request: Request):
         from src.db.session import default_session_factory
         from src.settings import Settings
         settings = Settings.from_env()
-        state.action_service = ActionService(default_session_factory(), default_tz=settings.report_timezone)
+        factory = default_session_factory()
+        _ensure_schema(factory)
+        state.action_service = ActionService(factory, default_tz=settings.report_timezone)
         state.signing_key = settings.action_signing_key
     return state.action_service, state.signing_key
 
@@ -216,7 +228,9 @@ def _coach(request: Request, token: str):
         from src.db.session import default_session_factory
         from src.settings import Settings
         s = Settings.from_env()
-        state.coach_service = CoachService(default_session_factory(), s.action_signing_key, s.anthropic_api_key,
+        factory = default_session_factory()
+        _ensure_schema(factory)
+        state.coach_service = CoachService(factory, s.action_signing_key, s.anthropic_api_key,
                                            s.reasoning_model, default_tz=s.report_timezone)
     service = state.coach_service
     try:

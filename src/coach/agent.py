@@ -196,6 +196,7 @@ class Toolbox:
                 return self.propose(args)
             return dict(error=f"unknown tool {name}")
         except Exception as exc:   # a broken tool must not break the conversation
+            print(f"tool {name} failed: {type(exc).__name__}")   # for the host's logs; never data
             return dict(error=f"tool failed ({type(exc).__name__})")
 
     def propose(self, args: dict) -> dict:

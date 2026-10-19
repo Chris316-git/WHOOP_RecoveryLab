@@ -1,4 +1,4 @@
-.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings demo test
+.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings demo coach-link memory test
 
 setup:            ## Install dependencies
 	uv sync
@@ -40,6 +40,12 @@ settings:         ## Show or change report settings, e.g. make settings ARGS="--
 
 demo:             ## Write the public demo page (docs/index.html) from today's run; no email, nothing stored
 	uv run python scripts/demo.py $(ARGS)
+
+coach-link:       ## Print a link to the coach chat (valid 3 days)
+	uv run python scripts/coach_link.py
+
+memory:           ## Show or forget what the agent remembers, e.g. make memory ARGS="--forget 3"
+	uv run python scripts/memory.py $(ARGS)
 
 test:
 	uv run pytest -q

@@ -29,3 +29,6 @@ services:
         sync: false
       - key: GITHUB_REPO
         value: Chris316-git/WHOOP_RecoveryLab
+      # The coach chat (/coach/<link from the email>) calls Claude from here
+      - key: ANTHROPIC_API_KEY
+        sync: false

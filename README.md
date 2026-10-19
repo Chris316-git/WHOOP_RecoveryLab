@@ -24,10 +24,22 @@ tampered replies, the running experiment, and simulation checks of the statistic
 ## Architecture
 
 ```
-WHOOP API ─OAuth─┐
-                 ├─> Ingestion ─> Postgres ─> Stats engine ─> LLM layer ─> App
-Google Calendar ─┘    (daily sync)  (per-user)   (experiments)   (explain / propose)
+WHOOP webhook / schedule
+        │
+        ▼
+ Ingestion ─> Postgres ─> Python analytics ─> Daily agent ──────────────> Email brief ─> user taps
+ (WHOOP,       (per-user)  (baselines, trends,  Observe: case file,          (buttons: calendar,
+  Calendar)                 load, sleep debt,     memory, yesterday's notes,   experiments)
+                            experiments)          read-only tools                 │
+                                                Reason: LLM decides; code         ▼
+                                                  validates evidence, numbers, Coach chat (agent)
+                                                  safety, free time            remember -> memory
+                                                Act: one plan or "no change"   propose -> confirm
+                                                Learn: notes, trace, outcome   -> calendar
 ```
+
+The LLM decides and explains; Python computes every number, checks every claim and runs
+every tool. Nothing outside Recovery Lab changes without a tap from the user.
 
 - **Multi-user by design:** every table is keyed by `user_id`; credentials are stored per user.
 - **Privacy first:** calendar sync stores only time blocks (start, end, busy/free, attendee count).
@@ -166,6 +178,30 @@ their own, so opening a link never changes anything by itself: the page sends th
 a line of JavaScript (which most scanners do not run) and shows a plain button otherwise.
 Without `PUBLIC_BASE_URL`, emails are sent without buttons.
 
+## Daily agent: Observe -> Reason -> Act -> Learn
+
+With `ANTHROPIC_API_KEY` set (and the default `REASONING_MODE=agent`), the morning plan comes
+from a lightweight single-agent workflow (`src/agent/daily.py`, a plain loop over the
+Messages API, no framework) that runs when WHOOP reports last night's score:
+
+- **Observe:** today's case file (below), plus **personal memory** (goals, preferences,
+  constraints and corrections you told the coach, `src/memory/store.py`) and the agent's own
+  **notes from yesterday**, all as numbered evidence. It may call read-only tools (a metric's
+  history, comparisons of days, activities, past plans with responses and outcomes); each
+  result becomes a new evidence item it can cite.
+- **Reason:** it decides what deserves attention, or that nothing needs to change. Code
+  validates the answer (evidence ids, numbers, safety, free time) and two agent rules: no
+  silent repeat of advice you just dismissed or did not follow, and checked numbers in its
+  notes. One revision with the problems listed; then the rule engine's plan is used.
+- **Act:** one plan in the email, or "nothing needs to change". The calendar is written only
+  when you tap.
+- **Learn:** the plan, tool trace and notes for tomorrow are stored with the day; tomorrow it
+  reads them with your response, the measured outcome and anything you told the coach. After
+  "Dismiss" the result page offers "Tell the coach why", and the coach saves the correction
+  to memory. `make memory` shows what is remembered and forgets items.
+
+`REASONING_MODE=ai` uses the single-call engine described next instead.
+
 ## AI reasoning engine (optional)
 
 With `ANTHROPIC_API_KEY` set, the morning plan is decided by a Claude model instead of the rule
@@ -187,6 +223,28 @@ engine, within limits enforced in code:
 
 `REASONING_MODE=shadow` keeps showing the rules' plan while still recording the AI's, and
 `REASONING_MODE=off` disables it. The calendar is still only written when you tap the button.
+
+## Coach (agent)
+
+The daily email links to a chat with the coach: tell it what you want to improve, and it
+looks at your data, finds free time and proposes one or two blocks you can add to your
+calendar with one tap (with Undo). Unlike the daily reasoning engine, which reads one fixed
+case file, the coach is a tool-using agent: it decides which tools to call and in what order.
+
+- **Tools** (`src/coach/tools.py`, all computed in Python, read-only): today's case file,
+  a metric's daily history, comparisons of two groups of days (after hard days, after an
+  activity, weekend nights; labeled as association only), activities, free time, and
+  `propose_block`, which code checks (inside free time, not in the past, no hard session when
+  today's data argues against one, no conflict with a running experiment).
+- **Checks on the reply** (`src/coach/agent.py`): every number must appear in a tool result or
+  in your own words (small counts excepted), and the banned-wording list applies; a failing
+  reply gets one rewrite, then is shown with a "could not be verified" note.
+- **Limits**: at most 6 tool rounds per answer, 2 proposals, 40 messages per day; proposals
+  are signed so the "Add" request cannot be edited, and the time is checked again before writing.
+- **Privacy**: the conversation lives in the browser tab only; the server stores none of it.
+
+Setup: add `ANTHROPIC_API_KEY` to the web host's environment (Render). The link appears in
+the email once `PUBLIC_BASE_URL` and `ACTION_SIGNING_KEY` are set.
 
 ## Personal experiments (v0.1)
 

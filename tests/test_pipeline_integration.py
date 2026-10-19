@@ -178,6 +178,7 @@ def test_rejected_ai_plan_falls_back_to_the_rules(factory):
     outbox = []
     p = make_pipeline(factory, outbox)
     bad = dict(AI_PLAN, headline="Sleep 937 extra minutes tonight.")          # invented number
+    p.settings = Settings(report_email_to="me@example.com", reasoning_mode="ai")
     p.reasoning_call = lambda key, model, case: _json.dumps(bad)
     run = p.run_user(str(USER), mode="now")
     assert "reasoning: rejected (numbers)" in run.steps
@@ -209,9 +210,63 @@ def test_ai_proposal_becomes_a_start_button(factory):
     p = make_pipeline(factory, outbox)
     plan = dict(AI_PLAN, experiment_proposal=dict(preset="screens_off_30", why="A good moment to test a habit.",
                                                   evidence=["E1"]))
+    p.settings = Settings(report_email_to="me@example.com", reasoning_mode="ai")
     p.reasoning_call = lambda key, model, case: _json.dumps(plan)
     p.run_user(str(USER), mode="now")
     assert "Suggested experiment" in outbox[0][2]
     with factory() as s:
         e = s.query(Experiment).one()
         assert e.status == "proposed" and e.preset == "screens_off_30" and e.reason.startswith("A good moment")
+
+
+def agent_replies(*replies):
+    """A scripted daily agent: each call returns the next reply (tool calls or the final JSON)."""
+    import json as _json
+    replies = [r if "content" in r else dict(content=[dict(type="text", text=_json.dumps(r))]) for r in replies]
+    seen = []
+
+    def call(messages):
+        seen.append(messages)
+        return replies.pop(0)
+    call.seen = seen
+    return call
+
+
+def test_daily_agent_uses_tools_memory_and_leaves_notes_for_tomorrow(factory):
+    from src.memory import store
+    with factory() as s:
+        store.add(s, USER, "constraint", "I cannot train before work")
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    plan = dict(AI_PLAN, notes_for_tomorrow=["Check whether the wind-down happened."], repeat_justification=None)
+    p.agent_call = agent_replies(
+        dict(content=[dict(type="tool_use", id="t1", name="get_metric_history",
+                           input=dict(metric="recovery", days=7))]),
+        plan)
+    run = p.run_user(str(USER), mode="now")
+    assert "reasoning: ok" in run.steps and "agent tools: 1" in run.steps
+    first = p.agent_call.seen[0][0]["content"]
+    assert "I cannot train before work" in first                     # memory is part of the case file
+    with factory() as s:
+        row = s.get(DailyPlan, (USER, TODAY))
+        assert row.engine == "ai" and row.agent_notes == ["Check whether the wind-down happened."]
+        assert row.agent_trace[0]["tool"] == "get_metric_history"
+        assert any(e["topic"] == "tool:get_metric_history" for e in row.evidence["evidence"])
+
+
+def test_daily_agent_reads_yesterdays_notes_and_may_change_nothing(factory):
+    with factory() as s:
+        s.add(DailyPlan(user_id=USER, day=TODAY - timedelta(days=1), focus="prioritize_sleep", score=0.6,
+                        reasons=[], block=None, considered=[], agent_notes=["Watch bedtime drift."]))
+        s.commit()
+    outbox = []
+    p = make_pipeline(factory, outbox)
+    none = dict(focus_type="none", title="Nothing needs to change today", confidence=None,
+                headline="You are on track, so keep your usual routine.", reasons=[], counter=[],
+                action=dict(type="none"), uncertainty=None, hypothesis=None, notes_for_tomorrow=[])
+    p.agent_call = agent_replies(none)
+    run = p.run_user(str(USER), mode="now")
+    assert "reasoning: ok" in run.steps
+    assert "Watch bedtime drift." in p.agent_call.seen[0][0]["content"]
+    with factory() as s:
+        assert s.get(DailyPlan, (USER, TODAY)).focus == "none"

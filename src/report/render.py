@@ -168,6 +168,8 @@ def render_text(summary: dict, notices: list[str]) -> str:
                   + (f", {cal['first_start']}-{cal['last_end']}" if cal["first_start"] else "")]
         if cal["free_windows"]:
             lines.append("  Free: " + ", ".join(f"{w['start']}-{w['end']}" for w in cal["free_windows"]))
+    if summary.get("coach_link"):
+        lines += ["", f"Talk to your coach: {summary['coach_link']}"]
     return "\n".join(lines)
 
 
@@ -582,9 +584,15 @@ def render_html(summary: dict, notices: list[str]) -> str:
               + (f' <a href="{escape(summary["experiment_links"]["exp_browse"])}" style="color:{MUTED}">'
                  f'Browse experiments</a>.' if (summary.get("experiment_links") or {}).get("exp_browse") else "")
               + '</td></tr>')
+    coach = summary.get("coach_link")
+    coach_html = (f'<tr><td style="padding:0 0 12px"><a href="{escape(coach)}" style="display:block;background:{CARD};'
+                  f'border:1px solid {LINE};border-radius:14px;padding:14px 18px;text-decoration:none;color:{INK}">'
+                  f'<span style="font-size:15px;font-weight:600">Want to improve something? Talk to your coach '
+                  f'&rarr;</span><br><span style="font-size:13px;color:{MUTED}">It looks at your data and free time '
+                  f'and can put a plan on your calendar.</span></a></td></tr>') if coach else ""
     content = (header + notice_html + _hero(summary) + _yesterday(summary) + _focus(summary) + _experiment(summary)
                + _body(summary)
-               + _today(summary) + footer)
+               + _today(summary) + coach_html + footer)
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>'

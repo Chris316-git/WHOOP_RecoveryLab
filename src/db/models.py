@@ -214,6 +214,8 @@ class DailyPlan(Base):
     ai_status: Mapped[str | None] = mapped_column(String(16))      # ok | rejected | error | off
     ai_problems: Mapped[list | None] = mapped_column(JSONB)        # why the validator rejected it
     evidence: Mapped[dict | None] = mapped_column(JSONB)           # the case file the AI saw
+    agent_notes: Mapped[list | None] = mapped_column(JSONB)        # the agent's notes to itself for tomorrow
+    agent_trace: Mapped[list | None] = mapped_column(JSONB)        # tools the agent called (names and inputs)
     # response
     response: Mapped[str | None] = mapped_column(String(16))       # None | added | dismissed | not_useful
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -230,6 +232,24 @@ class DailyPlan(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ---------------- Personal memory ----------------
+
+class UserMemory(Base):
+    """Things the user told Recovery Lab about themselves that should shape future advice:
+    goals, preferences, constraints and corrections of earlier suggestions. Only what the user
+    said (from the coach chat or settings), never inferred; each item can be forgotten."""
+    __tablename__ = "user_memories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))                  # goal | preference | constraint | correction
+    text: Mapped[str] = mapped_column(String(240))
+    source: Mapped[str] = mapped_column(String(16), default="coach")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    forgotten_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # ---------------- Experiments (Phase 4, v0.1) ----------------

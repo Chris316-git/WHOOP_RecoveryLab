@@ -276,6 +276,14 @@ a pre-registration snapshot, the assessment and follow-up decisions.
 
 Goal: the assistant knows *you*, not just yesterday's numbers.
 
+**Done (first part): the agent.** A daily agent (Observe -> Reason -> Act -> Learn, see the
+README) replaces the single call: it reads personal memory and its own notes from yesterday,
+calls read-only tools when it needs more, may decide that nothing needs to change, and may not
+silently repeat advice the user ignored. The coach chat is the second, on-demand entry point:
+a tool-using agent that saves the user's goals, preferences, constraints and corrections to
+memory (forgettable) and proposes calendar blocks that are written only after a tap.
+Personal memory today holds only what the user said; the computed insights below come next.
+
 - **Memory = structured insights computed in code,** not raw data handed to the LLM. A
   `user_insights` table stores one row per insight:
   - the statement (e.g. "you sleep about 35 min less on Tuesdays and Wednesdays");
@@ -294,9 +302,7 @@ Goal: the assistant knows *you*, not just yesterday's numbers.
 
 ## Later (not now)
 
-- **Assistant mode:** expose the existing pipeline as tools (today's signals, the planner,
-  free time, add or move a calendar block, experiment status), e.g. as an MCP server, so the
-  user can ask an assistant when they want to plan, instead of us building a chat UI.
+- **Assistant mode elsewhere:** the coach's tools as an MCP server, so other assistants can use them.
 
 - Full web dashboard (history, experiments, insights); Telegram as a second channel.
 - Hosted multi-user version: web OAuth, a settings page, per-user email via a transactional

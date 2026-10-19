@@ -194,10 +194,89 @@ def action_submit(token: str, request: Request, choice: int | None = None, prese
     title = RESULT_TITLES.get(outcome.status, "Done")
     if outcome.calendar in ("failed", "not_connected"):
         title = "Saved, but not on your calendar yet"
+    coach_url = None
+    if outcome.status in ("dismissed", "not_useful"):   # feedback -> the coach -> personal memory
+        from src.actions.tokens import ActionToken, sign
+        coach_url = "/coach/" + sign(ActionToken(t.user_id, t.day, "coach", t.expires_at + 2 * 86400), key)
     return _no_store(HTMLResponse(pages.done(
         title, outcome.message, outcome.block,
         undo_url=_link(t, "undo", key) if outcome.can_undo else None,
-        not_useful_url=_link(t, "not_useful", key) if outcome.ask_not_useful else None)))
+        not_useful_url=_link(t, "not_useful", key) if outcome.ask_not_useful else None,
+        coach_url=coach_url)))
+
+
+# ---------------- Coach: chat with an agent about what to improve ----------------
+
+def _coach(request: Request, token: str):
+    """(CoachService, user id) for a valid coach link; tests set app.state.coach_service."""
+    from src.actions.tokens import InvalidToken, verify
+    state = request.app.state
+    if not hasattr(state, "coach_service"):
+        from src.coach.service import CoachService
+        from src.db.session import default_session_factory
+        from src.settings import Settings
+        s = Settings.from_env()
+        state.coach_service = CoachService(default_session_factory(), s.action_signing_key, s.anthropic_api_key,
+                                           s.reasoning_model, default_tz=s.report_timezone)
+    service = state.coach_service
+    try:
+        t = verify(token, service.signing_key)
+    except InvalidToken as exc:
+        raise HTTPException(403, str(exc).capitalize() + ". Open the coach from a recent email.") from None
+    if t.action != "coach":
+        raise HTTPException(403, "This link is not a coach link.")
+    return service, t.user_id
+
+
+@app.get("/coach/{token}")
+def coach_page(token: str, request: Request):
+    from src.coach.page import PAGE
+    _coach(request, token)
+    return _no_store(HTMLResponse(PAGE))
+
+
+@app.post("/coach/{token}/message")
+async def coach_message(token: str, request: Request):
+    service, user_id = _coach(request, token)
+    body = await request.json()
+    history = body.get("history") if isinstance(body, dict) else None
+    if not isinstance(history, list) or not history:
+        raise HTTPException(400, "history must be a non-empty list")
+    if not service.api_key and service.call is None:
+        return {"error": "The coach needs ANTHROPIC_API_KEY on the web host."}
+    from starlette.concurrency import run_in_threadpool
+    try:
+        result = await run_in_threadpool(service.message, user_id, history)
+    except Exception as exc:
+        print(f"coach: {type(exc).__name__}")   # never the conversation
+        return {"error": "The coach is not available right now. Try again in a minute."}
+    print(f"coach: tools={len(result['tools_used'])} proposals={len(result['proposals'])} "
+          f"remembered={len(result.get('remembered') or [])} checked={result['checked']}")
+    return result
+
+
+@app.post("/coach/{token}/add")
+async def coach_add(token: str, request: Request):
+    service, user_id = _coach(request, token)
+    body = await request.json()
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(service.add, user_id, str((body or {}).get("token", "")))
+
+
+@app.post("/coach/{token}/forget")
+async def coach_forget(token: str, request: Request):
+    service, user_id = _coach(request, token)
+    body = await request.json()
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(service.forget, user_id, str((body or {}).get("token", "")))
+
+
+@app.post("/coach/{token}/undo")
+async def coach_undo(token: str, request: Request):
+    service, user_id = _coach(request, token)
+    body = await request.json()
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(service.undo, user_id, str((body or {}).get("token", "")))
 
 
 # ---------------- WHOOP webhook: email as soon as last night is scored ----------------
@@ -249,7 +328,8 @@ def healthz(deep: bool = False):
     s = Settings.from_env()
     out = {"ok": True, "database_url_set": bool(s.database_url), "signing_key_set": bool(s.action_signing_key),
            "encryption_key_set": bool(s.token_encryption_key), "webhook_secret_set": bool(s.whoop_client_secret),
-           "dispatch_token_set": bool(s.github_dispatch_token and s.github_repo)}
+           "dispatch_token_set": bool(s.github_dispatch_token and s.github_repo),
+           "anthropic_key_set": bool(s.anthropic_api_key)}
     try:
         from src.db.session import default_session_factory
         with default_session_factory()() as session:

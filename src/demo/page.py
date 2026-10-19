@@ -284,7 +284,7 @@ def privacy_problems(html: str, forbidden: list[str]) -> list[str]:
     problems = []
     if _EMAIL.search(html):
         problems.append("an email address")
-    if "/a/" in html:
+    if "/a/" in html or "/coach/" in html:
         problems.append("an action link")
     problems += [f"a private value ({f[:3]}...)" for f in forbidden if f and f in html]
     return problems

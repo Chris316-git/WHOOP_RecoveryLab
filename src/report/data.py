@@ -98,7 +98,7 @@ def load_recent_plans(session: Session, user_id: int, today: date, days: int = 7
         DailyPlan.user_id == user_id, DailyPlan.day >= today - timedelta(days=days), DailyPlan.day < today))
     return [dict(day=p.day.isoformat(), focus=p.focus, title=p.title, block=p.block, final_block=p.final_block,
                  response=p.response, calendar_status=p.calendar_status, outcome=p.outcome,
-                 outcome_detail=p.outcome_detail) for p in rows]
+                 outcome_detail=p.outcome_detail, agent_notes=p.agent_notes) for p in rows]
 
 
 def _experiment_dict(e) -> dict:

@@ -121,7 +121,7 @@ Recovery Lab sends data only to the services needed to run it:
 | GitHub Actions | Run the daily job | Encrypted credentials and database connection (as secrets) |
 | Email provider (e.g. Gmail) | Deliver the daily summary | The contents of the summary |
 | Web host (e.g. Render) | Run the endpoint behind the email links | Database connection and keys (as secrets); your clicks |
-| Anthropic API (optional) | Propose and word the daily focus | The computed case file described below |
+| Anthropic API (optional) | Propose and word the daily focus; the coach chat | The computed case file and coach tool results described below |
 
 **Language model (optional):** if the operator sets an Anthropic API key, a Claude model reads
 a "case file" each morning and proposes the day's focus and action. The case file contains only
@@ -136,6 +136,21 @@ diet advice); otherwise the rule-based plan is used. The case file, the model's 
 validation result are stored with the day's plan so the AI can be evaluated against the rules.
 Without a key, nothing is sent. Anthropic's handling of API data is described in its own
 privacy policy.
+
+**Personal memory:** goals, preferences, constraints and corrections you tell the coach are
+stored as short text items (only what you said, never health conditions or medication), shown
+in the chat when saved, and read by the daily agent and the coach. Each can be forgotten with
+one tap or `make memory ARGS="--forget <id>"`; `make memory ARGS="--delete-all"` removes all of
+them. The daily agent also stores its own short notes for the next day and the list of tools
+it called (names and inputs, not results) with the day's plan.
+
+**Coach chat (optional):** the email links to a chat page (a signed link, valid for 3 days).
+What you type, and the results of the tools the coach uses (this morning's case file, daily
+values of a metric for up to 60 days, comparisons of groups of days, your activity types, and
+free time blocks for today or tomorrow), are sent to the Anthropic API to answer you. The
+conversation is kept only in your browser tab and is not stored by Recovery Lab; the web host
+logs only counts (tools used, proposals, whether the numbers checked out). A suggested block
+is written to your Recovery Lab calendar only when you tap "Add to calendar".
 
 ## Retention
 

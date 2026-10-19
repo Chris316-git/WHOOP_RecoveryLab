@@ -65,13 +65,16 @@ def change_options(url: str, plan: dict, options: list[dict]) -> str:
 
 
 def done(title: str, message: str, block: dict | None = None, undo_url: str | None = None,
-         not_useful_url: str | None = None) -> str:
+         not_useful_url: str | None = None, coach_url: str | None = None) -> str:
     extra = f'<p style="font-size:17px;font-weight:600;margin:0 0 8px">{escape(block_text(block))}</p>' if block else ""
     body = extra + f'<p style="color:{MUTED};margin:0">{escape(message)}</p>'
     if undo_url:
         body += button(undo_url, "Undo", primary=False)
     if not_useful_url:
         body += text_button(not_useful_url, "The suggestion itself wasn't useful")
+    if coach_url:
+        body += (f'<p style="margin:16px 0 0;font-size:14px"><a href="{escape(coach_url)}" style="color:{INK}">'
+                 'Tell the coach why &rarr;</a> <span style="color:#6b7280">It will remember for next time.</span></p>')
     return page(title, body)
 
 

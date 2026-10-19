@@ -78,6 +78,7 @@ class DailyPipeline:
     preview_dir: Path | None = None
     wording_call: Callable | None = None             # LLM transport; None = the Claude API (tests inject a fake)
     reasoning_call: Callable | None = None           # same, for the AI reasoning engine
+    agent_call: Callable | None = None               # same, for the daily agent (takes the message list)
 
     # ---- stage 0: context ----
     def context(self, user_id: str) -> tuple[str, ReportSchedule]:
@@ -125,6 +126,8 @@ class DailyPipeline:
             plans = {k: load_plan(session, uid, today - timedelta(days=k)) for k in range(1, REVIEW_DAYS + 1)}
             history = load_recent_plans(session, uid, today)
             experiments, answers = load_experiments(session, uid)
+            from src.memory import store as memory_store
+            memories = memory_store.active(session, uid)
         summary = build_daily_summary(panel, today, tz, events, now=now, recent_focuses=recent, not_useful=muted,
                                       habits=habits)
         # Did the recent focuses happen? Read from the wearable data, so nobody has to check in.
@@ -142,6 +145,8 @@ class DailyPipeline:
         self.experiment_context(summary, experiments, answers, panel, today)
         from src.reasoning.evidence import build_case
         summary["reasoning_case"] = build_case(summary, panel, today, now, habits, history)
+        # for the daily agent (not stored, not rendered)
+        summary["agent_context"] = dict(user_id=uid, tz=tz, now=now, memories=memories, recent_plans=history)
         return summary
 
     def experiment_context(self, summary: dict, experiments: list[dict], answers: dict, panel, today) -> None:
@@ -180,24 +185,48 @@ class DailyPipeline:
 
     # ---- stage 2a: AI reasoning ----
     def reason(self, summary: dict, run: UserRun) -> None:
-        """Let the AI decide today's focus from the evidence. Its plan replaces the rule engine's
-        only if it passes every check (and REASONING_MODE is "ai"); both are stored for evaluation."""
-        from src.reasoning.engine import reason
+        """Let the AI decide today's focus. REASONING_MODE: "agent" (default: the daily agent with
+        memory, tools and notes across days), "ai" (one call over the case file), "shadow" (run
+        the agent but show the rules' plan) or "off". The AI's plan replaces the rule engine's
+        only if it passes every check; both are stored for evaluation."""
         summary["reasoning"] = dict(status="off", problems=[], output=None)
         mode, case = self.settings.reasoning_mode, summary.get("reasoning_case")
-        has_key = bool(self.settings.anthropic_api_key) or self.reasoning_call is not None
+        has_key = (bool(self.settings.anthropic_api_key) or self.reasoning_call is not None
+                   or self.agent_call is not None)
         if mode == "off" or case is None or not has_key or not summary.get("last_night_scored"):
             return
-        result = reason(case, summary, self.settings.anthropic_api_key or "test", self.settings.reasoning_model,
-                        call=self.reasoning_call)
+        key = self.settings.anthropic_api_key or "test"
+        if mode in ("agent", "shadow"):
+            result = self.run_agent(summary, key)
+            run.steps.append(f"agent tools: {len(result['trace'])}")
+        else:
+            from src.reasoning.engine import reason
+            result = reason(case, summary, key, self.settings.reasoning_model, call=self.reasoning_call)
         summary["reasoning"] = {k: result[k] for k in ("status", "problems", "output")}
         detail = f" ({', '.join(result['problems'])})" if result["problems"] else ""
         run.steps.append(f"reasoning: {result['status']}{detail}")   # labels only, never content
-        if result["status"] == "ok" and mode == "ai":
+        if result["status"] == "ok" and mode in ("agent", "ai"):
             summary["rule_focus"] = summary["focus"]
             summary["focus"] = result["focus"]
             if result.get("proposal") and summary.get("experiment_options"):
                 summary["experiment_proposal"] = dict(result["proposal"], new=True)
+
+    def run_agent(self, summary: dict, api_key: str) -> dict:
+        """The daily agent (src/agent/daily.py) with this user's read-only tools."""
+        from src.agent import daily as agent
+        from src.coach.agent import Toolbox
+        from src.coach.tools import CoachData
+        ctx = summary["agent_context"]
+        yesterday = (ctx["now"].date() - timedelta(days=1)).isoformat()
+        notes = next((p.get("agent_notes") for p in ctx["recent_plans"] if p["day"] == yesterday), None)
+        case = agent.prepare_case(summary["reasoning_case"], ctx["memories"], notes)
+        data = CoachData(self.session_factory, ctx["user_id"], ctx["tz"], ctx["now"])
+        toolbox = Toolbox(data, allowed=set(agent.DAILY_TOOLS))
+        result = agent.run(case, summary, toolbox, ctx["recent_plans"], yesterday, api_key,
+                           self.settings.reasoning_model, call=self.agent_call)
+        summary["reasoning_case"] = result["case"]          # stored with the plan: what the agent saw
+        summary["agent"] = dict(notes=result["notes"], trace=result["trace"])
+        return result
 
     def explain_experiment(self, summary: dict, run: UserRun) -> None:
         """Plain-language explanation of a just-finished experiment by the LLM (numbers checked)."""
@@ -268,6 +297,8 @@ class DailyPipeline:
                                 confidence=rule.get("confidence"), block=rule.get("block")),
                 ai_output=r.get("output"), ai_status=r.get("status"), ai_problems=r.get("problems") or None,
                 evidence=summary.get("reasoning_case"),
+                agent_notes=(summary.get("agent") or {}).get("notes") or None,
+                agent_trace=(summary.get("agent") or {}).get("trace") or None,
             )], ["user_id", "day"])
             session.commit()
         return "open"
@@ -373,6 +404,17 @@ class DailyPipeline:
         return {a: f"{base}/a/{sign(ActionToken(int(user_id), now.date(), a, expires), key)}"
                 for a in actions}
 
+    def coach_link(self, user_id: str, now: datetime) -> str | None:
+        """Signed link to the coach chat, valid for 3 days."""
+        from datetime import time
+
+        from src.actions.tokens import ActionToken, sign
+        if not self.settings.actions_enabled:
+            return None
+        expires = int(datetime.combine(now.date() + timedelta(days=3), time(6), now.tzinfo).timestamp())
+        token = sign(ActionToken(int(user_id), now.date(), "coach", expires), self.settings.action_signing_key)
+        return f"{self.settings.public_base_url}/coach/{token}"
+
     def mark_sent(self, user_id: str, now: datetime) -> None:
         with self.session_factory() as session:
             upsert(session, UserSettings, [dict(user_id=int(user_id), last_report_on=now.date())], ["user_id"])
@@ -410,6 +452,7 @@ class DailyPipeline:
         self.save_experiment_result(user_id, summary)
         self.save_proposal(user_id, summary, now)
         summary["experiment_links"] = self.experiment_links(user_id, summary, now)
+        summary["coach_link"] = self.coach_link(user_id, now)
         if summary["experiment_links"] and not summary.get("actions"):
             self.warm_up()
         if status == "open":

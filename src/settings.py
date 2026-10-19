@@ -36,7 +36,7 @@ class Settings:
     action_signing_key: str = ""              # secret for signing the links in the email
     anthropic_api_key: str = ""               # optional: friendlier wording of the daily focus
     llm_model: str = "claude-haiku-5-5"
-    reasoning_mode: str = "ai"                # ai: show the AI's plan when it passes the checks; shadow; off
+    reasoning_mode: str = "agent"             # agent (daily agent) | ai (one call) | shadow | off
     reasoning_model: str = "claude-sonnet-5-5"
     whoop_client_secret: str = ""             # also signs WHOOP's webhooks
     github_dispatch_token: str = ""           # web host only: starts the daily workflow on a WHOOP webhook
@@ -64,7 +64,7 @@ class Settings:
             action_signing_key=get("ACTION_SIGNING_KEY"),
             anthropic_api_key=get("ANTHROPIC_API_KEY"),
             llm_model=get("LLM_MODEL", "claude-haiku-5-5"),
-            reasoning_mode=get("REASONING_MODE", "ai").lower(),
+            reasoning_mode=get("REASONING_MODE", "agent").lower(),
             reasoning_model=get("REASONING_MODEL", "claude-sonnet-5-5"),
             whoop_client_secret=get("WHOOP_CLIENT_SECRET"),
             github_dispatch_token=get("GITHUB_DISPATCH_TOKEN"),

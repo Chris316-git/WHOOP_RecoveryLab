@@ -1,7 +1,8 @@
 """Write the public demo page from one run of the real pipeline on today's data.
 
-    make demo              # sync, run the pipeline (no email, nothing saved), write docs/index.html
+    make demo              # sync, run the daily agent and one coach question (no email, nothing saved)
     make demo ARGS=--no-sync
+    make demo ARGS='--question "I want to fall asleep earlier"'
 
 Then open docs/index.html, check it, and commit it; GitHub Pages serves it from docs/.
 The page shows your real numbers for one day. Calendar events appear only as busy/free time,
@@ -31,6 +32,8 @@ from src.settings import Settings
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--no-sync", action="store_true", help="use the data already in the database")
+    parser.add_argument("--question", default="Fit a workout in this week", help="what to ask the coach")
+    parser.add_argument("--no-coach", action="store_true", help="leave out the coach exchange")
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -65,12 +68,25 @@ def main() -> None:
         panel = load_recent_panel(session, int(uid), now.date())
         experiments, answers = load_experiments(session, int(uid))
 
+    coach = None
+    if not args.no_coach and settings.anthropic_api_key:
+        print("Asking the coach...")
+        from src.coach.agent import COACH_TOOLS, Toolbox, chat
+        from src.coach.tools import CoachData
+        allowed = {t["name"] for t in COACH_TOOLS} - {"remember"}     # the demo never writes memory
+        toolbox = Toolbox(CoachData(factory, int(uid), tz, now), allowed=allowed)
+        result = chat([dict(role="user", content=args.question)], toolbox, settings.anthropic_api_key,
+                      settings.reasoning_model)
+        coach = dict(question=args.question, reply=result["reply"], tools_used=result["tools_used"],
+                     proposals=result["proposals"], checked=result["checked"])
+
     print("Running the simulation checks...")
     snapshot = dict(
         date=now.date().isoformat(), weekday=now.strftime("%A"), time=now.strftime("%H:%M"), timezone=tz,
         email_html=email_html, case=case, reasoning=reasoning, rule_focus=rule_focus,
         model=settings.reasoning_model,
         stress=stress_test(reasoning.get("output"), case, dict(summary, focus=rule_focus)),
+        agent=summary.get("agent"), coach=coach,
         experiment=experiment_progress(experiments, answers, panel, now.date()),
         calibration=calibration(), power=power(), example_card=example_card(),
     )

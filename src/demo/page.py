@@ -1,8 +1,9 @@
 """The public demo page (docs/index.html, served by GitHub Pages). Pure logic.
 
-It shows one day of the real pipeline: the morning brief, the numbered evidence the AI
-reasoned over, its reply and the validator's verdict, the validator catching tampered
-replies, the running experiment, and the simulation checks of the statistics.
+It shows one day of the real pipeline: the morning brief, the daily agent's loop (what it
+observed, the tools it called, the validator's verdict, its notes for tomorrow), the numbered
+evidence and its reply, the validator catching tampered replies, one real coach exchange, the
+running experiment, and the simulation checks of the statistics.
 
 What it never contains: action links (buttons are inert), calendar event titles (only
 busy/free time ever leaves the calendar module), email addresses or user ids. The script
@@ -98,6 +99,16 @@ pre{background:var(--code);border-radius:10px;padding:12px;overflow-x:auto;font-
 details summary{cursor:pointer;color:var(--accent);font-size:14px;margin-top:10px}
 .light{background:#f3f4f6;border-radius:14px;padding:14px;color:#111827}
 footer{margin-top:48px;font-size:13px;color:var(--muted)}
+.tag{display:inline-block;background:var(--chip);color:var(--chipink);border-radius:6px;padding:0 6px;font-size:11px}
+.loop{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media (max-width:820px){.loop{grid-template-columns:1fr}}
+.loop ul{margin:6px 0 0;padding-left:18px}.loop code{font-size:12px}
+.chat .me{margin-left:auto;max-width:85%;background:var(--ink);color:var(--bg);border-radius:14px;padding:8px 12px;
+width:fit-content}.chat .bot{max-width:85%;border:1px solid var(--line);border-radius:14px;padding:10px 12px;
+margin:10px 0 6px;white-space:pre-wrap}
+.prop{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;max-width:85%}
+.fake{display:inline-block;margin-top:8px;background:var(--ink);color:var(--bg);border-radius:8px;padding:6px 12px;
+font-size:13px;font-weight:600;opacity:.6}
 """
 
 JS = """
@@ -128,11 +139,73 @@ def _cites(ids: list[str]) -> str:
     return "".join(f'<span class="id cite" data-id="{escape(i)}">{escape(i)}</span>' for i in ids or [])
 
 
+TOPIC_NOTE = {"memory": "personal memory", "agent_notes": "agent's note from yesterday"}
+
+
+def _short(text: str, n: int = 260) -> str:
+    return text if len(text) <= n else text[:n].rstrip() + "…"
+
+
 def _evidence(case: dict) -> str:
+    def topic(t: str) -> str:
+        if t.startswith("tool:"):
+            return f'<span class="tag">tool result</span> {escape(t[5:])}'
+        if t in TOPIC_NOTE:
+            return f'<span class="tag">{TOPIC_NOTE[t]}</span>'
+        return escape(t)
     rows = "".join(f'<div class="ev" id="ev-{escape(e["id"])}"><span class="id">{escape(e["id"])}</span>'
-                   f'<span><span class="topic">{escape(e["topic"])}</span>{escape(e["text"])}</span></div>'
+                   f'<span><span class="topic">{topic(e["topic"])}</span>{escape(_short(e["text"]))}</span></div>'
                    for e in case.get("evidence", []))
-    return f'<div class="card"><h3>Evidence file (computed in Python)</h3>{rows}</div>'
+    return (f'<div class="card"><h3>What the agent saw</h3><p class="small muted">Numbered evidence: facts computed '
+            f'in Python, personal memory, its note from yesterday, and the results of the tools it chose to call.'
+            f'</p>{rows}</div>')
+
+
+def _loop(snapshot: dict) -> str:
+    a = snapshot.get("agent") or {}
+    case = snapshot.get("case") or {}
+    ev = case.get("evidence", [])
+    memories = sum(e["topic"] == "memory" for e in ev)
+    notes_in = sum(e["topic"] == "agent_notes" for e in ev)
+    trace = a.get("trace") or []
+    calls = "".join(f'<li><code>{escape(t["tool"])}</code> {escape(json.dumps(t.get("input") or {}))} '
+                    f'&rarr; <span class="id cite" data-id="{escape(t["evidence_id"])}">{escape(t["evidence_id"])}'
+                    f'</span></li>' for t in trace) or "<li>No extra tools needed today.</li>"
+    status = (snapshot.get("reasoning") or {}).get("status", "off")
+    revised = " after one revision" if a.get("revised") else ""
+    verdict = ("passed every check" + revised if status == "ok"
+               else f"{status}: the rule engine's plan was used instead")
+    notes = "".join(f"<li>{escape(n)}</li>" for n in a.get("notes") or []) or "<li>None today.</li>"
+    return (f'<div class="card loop">'
+            f'<div><b>Observe</b><p class="small">Today\'s computed case file, {memories} personal memory '
+            f'item{"s" if memories != 1 else ""}, {notes_in} note{"s" if notes_in != 1 else ""} from yesterday.</p>'
+            f'<ul class="small">{calls}</ul></div>'
+            f'<div><b>Reason</b><p class="small">Claude decides what deserves attention, or that nothing needs to '
+            f'change. Code validated the answer: {escape(verdict)}.</p></div>'
+            f'<div><b>Act</b><p class="small">One plan in the email. Nothing outside Recovery Lab changes until the '
+            f'user taps a button.</p></div>'
+            f'<div><b>Learn</b><p class="small">Stored with today\'s plan for tomorrow, next to the user\'s response '
+            f'and the outcome measured from the wearable:</p><ul class="small">{notes}</ul></div></div>')
+
+
+def _coach(snapshot: dict) -> str:
+    c = snapshot.get("coach")
+    if not c:
+        return ""
+    used = ", ".join(dict.fromkeys(c.get("tools_used") or [])) or "none"
+    props = "".join(
+        f'<div class="prop"><b>{escape(p["day"])} · {escape(p["start"])}-{escape(p["end"])}</b>'
+        f'<div>{escape(p["title"])}</div><div class="small muted">{escape(p.get("why") or "")}</div>'
+        f'<span class="fake">Add to calendar</span></div>' for p in c.get("proposals") or [])
+    flag = "" if c.get("checked", True) else ('<div class="small muted">Some numbers could not be verified; the '
+                                              'page would show this note.</div>')
+    return ('<section><h2>3. The coach: ask it anytime</h2><p class="muted">The email links to a chat with the same '
+            'tools plus three more: free time, saving what the user says (goals, preferences, corrections) to '
+            'memory, and proposing a calendar block. Proposals are checked in code and written only after a tap. '
+            'A real exchange from this snapshot:</p>'
+            f'<div class="card chat"><div class="me">{escape(c["question"])}</div>'
+            f'<div class="bot">{escape(c["reply"])}</div><div class="small muted">tools it chose: {escape(used)}'
+            f'</div>{flag}{props}</div></section>')
 
 
 def _ai_reply(snapshot: dict) -> str:
@@ -232,16 +305,17 @@ def _stats(snapshot: dict) -> str:
 
 def build_page(snapshot: dict) -> str:
     """snapshot: date, time, timezone, email_html, case, reasoning, rule_focus, model, stress,
-    experiment, calibration, power, example_card."""
+    agent (notes, trace, revised), coach (question, reply, tools_used, proposals), experiment,
+    calibration, power, example_card."""
     pipeline = "".join(
         ('<span class="arrow">&rarr;</span>' if i else "") + f'<div class="step"><b>{a}</b>{escape(b)}</div>'
         for i, (a, b) in enumerate([
-            ("Ingest", "WHOOP + Google Calendar, OAuth, incremental sync"),
-            ("Analyse", "personal baselines, trends, load, sleep debt"),
-            ("Evidence", "numbered facts, no raw records"),
-            ("Reason", "Claude plans the day"),
-            ("Validate", "citations, numbers, safety, calendar fit"),
-            ("Act", "email, one-tap calendar, experiments"),
+            ("Trigger", "WHOOP webhook when the night is scored"),
+            ("Analyse", "Python: baselines, trends, load, sleep debt"),
+            ("Observe", "evidence, memory, yesterday's notes, tools"),
+            ("Reason", "Claude decides; code validates"),
+            ("Act", "email; calendar only after a tap"),
+            ("Learn", "responses, outcomes, notes, corrections"),
         ]))
     srcdoc = escape(snapshot["email_html"], quote=True)
     return (
@@ -250,10 +324,12 @@ def build_page(snapshot: dict) -> str:
         '<meta name="referrer" content="no-referrer"><title>Recovery Lab Demo</title>'
         f'<style>{CSS}</style></head><body><div class="wrap">'
         '<div class="small muted" style="font-weight:700;letter-spacing:.08em">RECOVERY LAB</div>'
-        '<h1>A morning brief that reasons over your own data, and experiments that test what actually works</h1>'
-        '<p class="lead">Recovery Lab reads WHOOP and Google Calendar data, lets an LLM plan the day from numbered, '
-        'precomputed evidence, checks every claim in code, and runs randomized N-of-1 experiments with honest '
-        'statistics.</p>'
+        '<h1>A personal health agent that reasons over your own data, remembers what you tell it, and tests '
+        'what actually works</h1>'
+        '<p class="lead">Every morning, as soon as WHOOP scores the night, an agent reads Python-computed evidence, '
+        'its memory of you and its own notes from yesterday, calls tools when it needs more, and decides on one '
+        'action, or none. Code checks every claim. A coach chat and randomized N-of-1 experiments close the loop.'
+        '</p>'
         f'<div class="links"><a href="{REPO_URL}">Source on GitHub</a>'
         f'<a href="{REPO_URL}/blob/main/PRIVACY.md">Privacy design</a></div>'
         f'<div class="stamp">Real data from the author\'s own WHOOP · snapshot of {escape(snapshot["weekday"])} '
@@ -264,12 +340,14 @@ def build_page(snapshot: dict) -> str:
         'snapshot. Read it in 15 seconds; acting on it is optional. The buttons normally add the plan to the '
         'calendar with one tap, with Undo.</p>'
         f'<iframe id="brief" title="Morning brief" sandbox="allow-same-origin" srcdoc="{srcdoc}"></iframe></section>'
-        '<section><h2>2. How the AI decided</h2><p class="muted">The model never sees raw records. It gets a case '
-        'file of numbered facts, all computed in Python, and must cite them. Code then checks the reply; if any '
-        'check fails, the transparent rule engine\'s plan is used instead.</p>'
-        f'<div class="grid two">{_evidence(snapshot["case"])}<div>{_ai_reply(snapshot)}'
+        '<section><h2>2. The daily agent: observe, reason, act, learn</h2><p class="muted">The model never sees raw '
+        'records. Every fact it can use is a numbered evidence item, and every number in its answer is checked '
+        'against them; if a check fails it gets one revision, then the transparent rule engine\'s plan is used.</p>'
+        f'{_loop(snapshot)}'
+        f'<div class="grid two" style="margin-top:16px">{_evidence(snapshot["case"])}<div>{_ai_reply(snapshot)}'
         f'{_stress(snapshot.get("stress") or [])}</div></div></section>'
-        '<section><h2>3. Experiments: does a habit actually help me?</h2><p class="muted">The AI may propose an '
+        f'{_coach(snapshot)}'
+        '<section><h2>4. Experiments: does a habit actually help me?</h2><p class="muted">The AI may propose an '
         'experiment from a fixed list when the data makes it relevant; randomization, adherence and statistics stay '
         'in code. The verdict is pre-specified: helped, worse, no meaningful effect, or inconclusive.</p>'
         f'{_experiment(snapshot)}{_stats(snapshot)}</section>'

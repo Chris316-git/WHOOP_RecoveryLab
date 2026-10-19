@@ -225,7 +225,7 @@ class DailyPipeline:
         result = agent.run(case, summary, toolbox, ctx["recent_plans"], yesterday, api_key,
                            self.settings.reasoning_model, call=self.agent_call)
         summary["reasoning_case"] = result["case"]          # stored with the plan: what the agent saw
-        summary["agent"] = dict(notes=result["notes"], trace=result["trace"])
+        summary["agent"] = dict(notes=result["notes"], trace=result["trace"], revised=result.get("revised", False))
         return result
 
     def explain_experiment(self, summary: dict, run: UserRun) -> None:

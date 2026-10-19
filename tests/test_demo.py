@@ -24,6 +24,13 @@ def snapshot():
                 case=case, reasoning=s["reasoning"], rule_focus=rule, model="test-model",
                 stress=stress_test(result["output"], case, dict(s, focus=rule)),
                 experiment=experiment_progress([exp], {sched[0]["day"]: "yes"}, panel(), TODAY),
+                agent=dict(notes=["Check bedtime tomorrow."], revised=True,
+                           trace=[dict(tool="get_metric_history", input=dict(metric="bedtime", days=7),
+                                       evidence_id="E20")]),
+                coach=dict(question="Fit a workout in this week", reply="Tomorrow at 17:30 is free.",
+                           tools_used=["get_today", "get_free_time", "propose_block"], checked=True,
+                           proposals=[dict(day="2026-10-19", start="17:30", end="18:00", title="Easy run",
+                                           why="Free time.")]),
                 calibration=calibration(sims=200), power=[{"nights": 14, 3.0: 0.2, 5.0: 0.4}],
                 example_card=example_card())
 
@@ -45,8 +52,10 @@ def test_experiment_progress_hides_future_nights():
 def test_page_has_every_section_and_no_private_values():
     snap = snapshot()
     html = build_page(snap)
-    for text in ("The morning brief", "How the AI decided", "Validator stress test", "Running experiment",
-                 "False \"clear result\" rate", "What a finished result looks like", "E1"):
+    for text in ("The morning brief", "The daily agent", "Validator stress test", "Running experiment",
+                 "False \"clear result\" rate", "What a finished result looks like", "E1",
+                 "observe, reason, act, learn", "after one revision", "Check bedtime tomorrow.", "The coach",
+                 "Easy run", "get_metric_history"):
         assert text in html
     assert privacy_problems(html, ["secret-key-123"]) == []
     assert privacy_problems(html + "me@example.com /a/token", ["Sunday"]) == [

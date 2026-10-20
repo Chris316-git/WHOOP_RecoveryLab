@@ -213,13 +213,23 @@ becomes evidence the reply must cite, so the numbers in a general claim are chec
 coach shows the sources under its answer.
 
 - **Retrieval** (`src/knowledge/retrieval.py`): chunks at the cards' sections; **BM25**; optional
-  **dense** search with Voyage embeddings; **hybrid** by reciprocal rank fusion. With a few dozen
+  **dense** search with Voyage embeddings; **hybrid** by reciprocal rank fusion. The agents use
+  dense when a key is set and BM25 otherwise, because that is what the evaluation favored. With a few dozen
   chunks an exact in-memory index is the right store (a vector database such as pgvector pays off
   at thousands of chunks). Chunk embeddings are built once and cached with a content hash.
 - **Evaluation** (`src/evals/retrieval.py`, `make eval-retrieval`): 30 labeled questions, several
   worded without the cards' vocabulary ("phone" for screens, "HIIT" for exercise); hit@1, hit@3
-  and MRR per mode, written to `evals/RETRIEVAL.md`. BM25 alone: hit@3 90%, MRR 0.72; CI keeps a
-  floor so a change to the cards or the tokenizer cannot silently break search.
+  and MRR per mode, written to `evals/RETRIEVAL.md`:
+
+  | Mode | Hit@1 | Hit@3 | MRR |
+  |---|---|---|---|
+  | BM25 | 57% | 90% | 0.72 |
+  | Dense (voyage-4-lite) | 97% | 100% | 0.98 |
+  | Hybrid (RRF) | 83% | 97% | 0.90 |
+
+  BM25's misses are vocabulary mismatches ("Instagram" for screens); equal-weight fusion let them
+  drag dense hits down. With 30 questions written by the same author as the cards, treat these as
+  indicative. CI keeps a BM25 floor so a change to the cards or tokenizer cannot silently break search.
 
 Optional setup for dense search: get a Voyage API key (via MongoDB Atlas), add `VOYAGE_API_KEY` to
 `.env` (and to Render for the coach), then `make knowledge-index` and `make eval-retrieval`. Without

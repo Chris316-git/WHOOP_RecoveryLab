@@ -64,3 +64,33 @@ def test_agents_can_search_and_cite():
     assert top["id"].startswith("caffeine-timing") and "AASM" in top["source"] and len(r["results"]) <= 3
     assert tb.sources and tb.sources[0]["url"].startswith("https://")
     assert as_result([])["results"] == []
+
+
+def test_queries_are_batched_cached_and_rate_limits_retried():
+    from src.knowledge.retrieval import embed
+    calls = []
+
+    class R:
+        def __init__(self, code, body=None):
+            self.status_code, self._body, self.headers = code, body, {}
+
+        def json(self):
+            return self._body
+
+    queue = [R(429), R(200, dict(data=[dict(index=0, embedding=[1.0, 0.0])]))]
+
+    def post(url, **kw):
+        calls.append(kw["json"]["input"])
+        return queue.pop(0)
+    waits = []
+    assert embed(["q"], "k", "m", "query", "u", post=post, sleep=waits.append) == [[1.0, 0.0]]
+    assert len(calls) == 2 and waits == [10.0]
+
+    chunks = load_chunks()
+    batches = []
+    index = KnowledgeIndex(chunks, {c.id: [1.0, 0.0] for c in chunks}, embed_query=lambda q: 1 / 0)
+    index.embed_queries = lambda qs: batches.append(qs) or [[1.0, 0.0] for _ in qs]
+    index.prime(["a", "b", "a"])
+    index.search("a", mode="dense")
+    index.search("b", mode="hybrid")                  # served from the cache, no single-query call
+    assert batches == [["a", "b"]]

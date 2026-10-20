@@ -34,6 +34,9 @@ def main() -> None:
         return
     index = retrieval.get_index(s)
     modes = ["bm25"] + (["dense", "hybrid"] if index.dense_ready else [])
+    if index.dense_ready:
+        print(f"Embedding {len(QUERIES)} test questions in one request...")
+        index.prime([q for q, _ in QUERIES])
     if not index.dense_ready:
         print("Dense search off (needs VOYAGE_API_KEY and make knowledge-index); evaluating BM25 only.")
     results = [evaluate(index, m) for m in modes]

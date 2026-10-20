@@ -11,7 +11,10 @@ cards, each paraphrased from a named source, and cite it.
 * Dense (optional): Voyage embeddings (Anthropic's recommended embedding provider), cosine
   similarity on unit vectors. Chunk embeddings are computed once (`make knowledge-index`) and
   stored in knowledge/embeddings.json; only queries are embedded at run time.
-* Hybrid: reciprocal rank fusion of the two rankings (k = 60).
+* Hybrid: reciprocal rank fusion of the two rankings (k = 60). Measured on 30 labeled
+  questions, dense alone did best (hit@1 97% vs 83% hybrid and 57% BM25): equal-weight fusion
+  let BM25's vocabulary misses pull correct dense hits down. So the agents use dense when it is
+  available and BM25 otherwise ("auto"); hybrid stays available for comparison.
 * Store: an exact in-memory index. With a few dozen chunks brute force takes microseconds;
   a vector database (e.g. pgvector) becomes worth it with thousands of chunks.
 """
@@ -134,20 +137,35 @@ def get_index(settings=None) -> "KnowledgeIndex":
         if key:
             model, url = settings.voyage_model, settings.voyage_url
             embed_query = lambda q: embed([q], key, model, "query", url)[0]  # noqa: E731
+            embed_queries = lambda qs: embed(qs, key, model, "query", url)  # noqa: E731
         _CACHE[key] = KnowledgeIndex.load(embed_query)
+        if key:
+            _CACHE[key].embed_queries = embed_queries
     return _CACHE[key]
 
 
-def embed(texts: list[str], api_key: str, model: str, input_type: str, url: str, post=None) -> list[list[float]]:
-    """Voyage embeddings over HTTP (unit-length vectors)."""
+def embed(texts: list[str], api_key: str, model: str, input_type: str, url: str, post=None, retries: int = 5,
+          sleep=None) -> list[list[float]]:
+    """Voyage embeddings over HTTP (unit-length vectors). Rate limits (429) and overloads are retried
+    with backoff: accounts without a payment method allow only a few requests per minute."""
+    import time
     if post is None:
         import httpx
         post = httpx.post
-    resp = post(url, timeout=30, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=dict(input=texts, model=model, input_type=input_type))
-    if resp.status_code >= 400:
+    sleep = sleep or time.sleep
+    for attempt in range(retries + 1):
+        resp = post(url, timeout=30, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json=dict(input=texts, model=model, input_type=input_type))
+        if resp.status_code < 400:
+            return [d["embedding"] for d in sorted(resp.json()["data"], key=lambda d: d["index"])]
+        if resp.status_code in (429, 500, 502, 503, 529) and attempt < retries:
+            try:
+                wait = float(resp.headers.get("retry-after", ""))
+            except (ValueError, AttributeError):
+                wait = 10.0 * (attempt + 1)
+            sleep(min(65.0, wait))
+            continue
         raise RuntimeError(f"embedding API returned HTTP {resp.status_code}")
-    return [d["embedding"] for d in sorted(resp.json()["data"], key=lambda d: d["index"])]
 
 
 class KnowledgeIndex:
@@ -160,6 +178,8 @@ class KnowledgeIndex:
         self.bm25 = BM25([c.tokens for c in chunks])
         self.vectors = vectors or {}
         self.embed_query = embed_query
+        self.embed_queries = None          # optional batch embedder, used by prime()
+        self._query_cache: dict[str, list[float]] = {}
 
     @classmethod
     def load(cls, embed_query=None, directory: Path = KNOWLEDGE_DIR) -> "KnowledgeIndex":
@@ -182,12 +202,26 @@ class KnowledgeIndex:
         s = self.bm25.scores(tokenize(query))
         return [i for i in sorted(range(len(s)), key=lambda i: -s[i]) if s[i] > 0]
 
+    def prime(self, queries: list[str]) -> None:
+        """Embed many queries in one request (an evaluation run), so dense search does not make one
+        API call per question."""
+        todo = [q for q in dict.fromkeys(queries) if q not in self._query_cache]
+        if todo and self.embed_queries:
+            for q, v in zip(todo, self.embed_queries(todo)):
+                self._query_cache[q] = v
+
     def _dense(self, query: str) -> list[int]:
-        q = self.embed_query(query)
+        if query not in self._query_cache:
+            self._query_cache[query] = self.embed_query(query)
+        q = self._query_cache[query]
         sims = [sum(a * b for a, b in zip(q, self.vectors[c.id])) for c in self.chunks]
         return sorted(range(len(sims)), key=lambda i: -sims[i])
 
-    def search(self, query: str, k: int = 3, mode: str = "hybrid") -> list[Chunk]:
+    def search(self, query: str, k: int = 3, mode: str = "auto") -> list[Chunk]:
+        """mode "auto" (what the agents use): dense when available, else BM25. Chosen from
+        evals/RETRIEVAL.md, where dense beat both BM25 and the equal-weight hybrid."""
+        if mode == "auto":
+            mode = "dense" if self.dense_ready else "bm25"
         if mode == "dense" and not self.dense_ready:
             raise RuntimeError("dense search needs VOYAGE_API_KEY and make knowledge-index")
         if mode == "bm25" or not self.dense_ready:

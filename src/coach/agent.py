@@ -9,7 +9,7 @@ Guardrails, as in the daily reasoning engine:
 * numbers: every number in the reply must come from a tool result or the user's own words
   (small counts excepted); one retry with feedback, then the reply is flagged as unchecked;
 * wording: no diagnoses, medication, diet advice or body-state claims;
-* scope: read-only tools, at most MAX_TOOL_ROUNDS rounds, nothing stored server-side.
+* scope: read-only tools, at most MAX_TOOL_CALLS tool calls per answer, nothing stored server-side.
 """
 import json
 import re
@@ -20,7 +20,8 @@ from src.coach import tools as T
 from src.reasoning.validate import BANNED
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
-MAX_TOOL_ROUNDS = 6
+MAX_TOOL_CALLS = 10   # after this, tool calls get "answer now" instead of a result
+MAX_STEPS = 10
 MAX_PROPOSALS = 2
 SMALL_NUMBER = 10   # counts like "2 options" or "3 nights" need no source
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
@@ -282,14 +283,18 @@ def chat(history: list[dict], toolbox: Toolbox, api_key: str, model: str = DEFAU
     sources = [m["content"] for m in messages if m["role"] == "user"]
     used: list[str] = []
     retried = False
-    for _ in range(MAX_TOOL_ROUNDS + 2):
+    for _ in range(MAX_STEPS):
         response = call(messages)
         content = response.get("content", [])
         calls = [b for b in content if b.get("type") == "tool_use"]
-        if calls and len(used) < MAX_TOOL_ROUNDS * 3:
+        if calls:
             messages.append(dict(role="assistant", content=content))
             results = []
             for b in calls:
+                if len(used) >= MAX_TOOL_CALLS:   # every tool_use needs a result; this one says stop
+                    results.append(dict(type="tool_result", tool_use_id=b["id"], is_error=True,
+                                        content="Tool budget used up. Answer the user now with what you have."))
+                    continue
                 result = toolbox.run(b["name"], b.get("input") or {})
                 used.append(b["name"])
                 text = json.dumps(result, ensure_ascii=False, default=str)

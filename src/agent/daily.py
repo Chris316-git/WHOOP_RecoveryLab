@@ -30,7 +30,8 @@ from src.reasoning.engine import parse
 from src.reasoning.validate import _numbers, validate, validate_proposal
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_CALLS = 6     # after this, tool calls get "answer now" instead of a result
+MAX_STEPS = 9          # model calls per run, including one revision
 MAX_NOTES, NOTE_CHARS = 2, 160
 RESULT_CHARS = 1500
 DAILY_TOOLS = ("get_metric_history", "compare_days", "get_activities", "get_recent_plans")
@@ -41,15 +42,16 @@ You are now working as an agent with continuity across days.
 - The case file includes "memory" items (what the user told Recovery Lab: goals, preferences, constraints,
   corrections) and "agent_notes" items (what you wrote to yourself yesterday). Respect memory; follow up on
   your notes when the data allows.
-- You may call tools to look deeper before deciding (at most a few calls; only when it changes the decision).
+- You may call tools to look deeper before deciding: at most 6 tool calls, only when the answer could change
+  your decision. Then reply with the final JSON.
   Each tool result comes back with a new evidence id (E..); cite it like any other evidence.
 - Do not invent a task every day. If nothing stands out, or the user is already on track, choose focus_type
   "none". Do not repeat yesterday's suggestion if it was dismissed, marked not useful or not done, unless you
   change it (smaller, another time, another approach) or the data clearly requires it; then explain in
   "repeat_justification".
 - Add two fields to the JSON reply:
-  "notes_for_tomorrow": 0-2 short notes to yourself (what to check tomorrow, what you are watching), using
-                        only numbers from the evidence;
+  "notes_for_tomorrow": 0-2 notes to yourself, each under 160 characters (what to check tomorrow, what you are
+                        watching), using only numbers from the evidence;
   "repeat_justification": null, or one sentence if today's focus repeats yesterday's unfollowed advice."""
 
 
@@ -76,17 +78,21 @@ def repeat_problem(out: dict, recent_plans: list[dict], yesterday: str) -> str |
 
 
 def check_notes(out: dict, case: dict) -> tuple[list[str], list[str]]:
+    """(notes kept, reasons for dropped notes). Notes are the agent's own memo, so a bad note is
+    dropped instead of rejecting the day's plan; a note with an unchecked number never survives."""
     notes = out.get("notes_for_tomorrow") or []
     if not isinstance(notes, list):
         return [], ["notes format"]
-    notes = [str(n).strip() for n in notes if str(n).strip()][:MAX_NOTES]
-    problems = []
-    if any(len(n) > NOTE_CHARS for n in notes):
-        problems.append("note length")
     allowed = _numbers(json.dumps(case, ensure_ascii=False))
-    if _numbers(" ".join(notes)) - allowed:
-        problems.append("numbers in notes")
-    return notes, problems
+    kept, dropped = [], []
+    for n in [str(n).strip() for n in notes if str(n).strip()][:MAX_NOTES]:
+        if len(n) > NOTE_CHARS:
+            dropped.append("note length")
+        elif _numbers(n) - allowed:
+            dropped.append("numbers in notes")
+        else:
+            kept.append(n)
+    return kept, dropped
 
 
 def call_messages(api_key: str, model: str, messages: list[dict], tools: list[dict]) -> dict:
@@ -107,9 +113,9 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
     usage = dict(calls=0, input_tokens=0, output_tokens=0, seconds=0.0)
     attempts: list[dict] = []     # every final answer the model gave, with the checks' verdict
     record = dict(status="error", problems=[], output=None, focus=None, proposal=None, notes=[], trace=trace,
-                  case=case, usage=usage, attempts=attempts)
+                  case=case, usage=usage, attempts=attempts, notes_dropped=[])
     try:
-        for _ in range(MAX_TOOL_ROUNDS + 3):
+        for _ in range(MAX_STEPS):
             started = time.monotonic()
             response = call(messages)
             usage["seconds"] = round(usage["seconds"] + time.monotonic() - started, 2)
@@ -118,10 +124,14 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
                 usage[k] += int((response.get("usage") or {}).get(k) or 0)
             content = response.get("content", [])
             calls = [b for b in content if b.get("type") == "tool_use"]
-            if calls and len(trace) < MAX_TOOL_ROUNDS * 2:
+            if calls:
                 messages.append(dict(role="assistant", content=content))
                 results = []
                 for b in calls:
+                    if len(trace) >= MAX_TOOL_CALLS:   # every tool_use needs a result; this one says stop
+                        results.append(dict(type="tool_result", tool_use_id=b["id"], is_error=True,
+                                            content="Tool budget used up. Reply now with the final JSON only."))
+                        continue
                     args = b.get("input") or {}
                     result = toolbox.run(b["name"], args)
                     eid = f"E{len(case['evidence']) + 1}"
@@ -140,8 +150,8 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
             else:
                 focus, problems = validate(output, case, summary)
                 rp = repeat_problem(output, recent_plans, yesterday)
-                notes, note_problems = check_notes(output, case)
-                problems = problems + ([rp] if rp else []) + note_problems
+                notes, record["notes_dropped"] = check_notes(output, case)
+                problems = problems + ([rp] if rp else [])
             attempts.append(dict(output=output, problems=problems))
             if problems and not revised:
                 revised = True

@@ -56,10 +56,26 @@ def test_no_silent_repeats_of_ignored_advice():
     assert repeat_problem(ai(), followed, "2026-10-17") is None
 
 
-def test_notes_are_short_and_number_checked():
+def test_bad_notes_are_dropped_not_fatal():
     _, case = setup()
     assert check_notes(dict(notes_for_tomorrow=["Check bedtime", "x", "y"]), case) == (["Check bedtime", "x"], [])
-    assert check_notes(dict(notes_for_tomorrow=["HRV fell 9137 ms"]), case)[1] == ["numbers in notes"]
+    assert check_notes(dict(notes_for_tomorrow=["HRV fell 9137 ms", "Check bedtime"]), case) == (
+        ["Check bedtime"], ["numbers in notes"])
+    s, case = setup()
+    long_note = ai(notes_for_tomorrow=["x" * 200])
+    r = run(case, s, Toolbox(FakeData()), [], "2026-10-17", "k", call=replies(long_note))
+    assert r["status"] == "ok" and r["notes"] == [] and r["notes_dropped"] == ["note length"]
+
+
+def test_tool_budget_forces_an_answer():
+    s, case = setup()
+    tool = dict(content=[dict(type="tool_use", id=f"t{i}", name="get_metric_history",
+                              input=dict(metric="recovery", days=7)) for i in range(4)])
+    call = replies(tool, tool, ai())                       # 8 tool calls asked, budget is 6
+    r = run(case, s, Toolbox(FakeData(), allowed={"get_metric_history"}), [], "2026-10-17", "k", call=call)
+    assert r["status"] == "ok" and len(r["trace"]) == 6
+    last_results = call.seen[2][-1]["content"]
+    assert sum(x.get("is_error", False) for x in last_results) == 2 and "Reply now" in last_results[-1]["content"]
 
 
 def test_daily_agent_cannot_write_or_propose():

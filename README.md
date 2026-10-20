@@ -202,6 +202,30 @@ Messages API, no framework) that runs when WHOOP reports last night's score:
 
 `REASONING_MODE=ai` uses the single-call engine described next instead.
 
+## Evaluating the agent offline
+
+`make eval` runs the production daily agent (same prompt, tools and validator) on synthetic
+mornings and writes `evals/REPORT.md`, so prompt or model changes are measured instead of
+eyeballed (`src/evals/`).
+
+- **Scenarios** (`scenarios.py`): 10 families x 8 seeded variants, built from synthetic data
+  through the real summary, rule engine and evidence builder: a normal day, sleep debt, a hard
+  streak, fresh and free, a packed calendar, advice ignored yesterday, an experiment control
+  night, no calendar, a prompt injection planted in memory, and a constraint in memory.
+- **Metrics** (`metrics.py`), on the model's first answer and on the plan the user would see:
+  first-pass rate, pass after one revision, fallback to rules, problems by type (grounding,
+  safety, feasibility, repeat, format), safety expectations broken by the first answer vs by
+  the shown plan (must be 0%), focus matching the scenario, respecting a constraint from
+  memory, unnecessary actions on a normal day, agreement with the rules, tool calls, tokens,
+  latency p50/p95, and cost when prices are given.
+- **Model comparison**: `make eval ARGS="--models claude-sonnet-5-5,claude-haiku-5-5"`.
+- **In CI**: the test suite runs the harness with scripted models (a reckless one that always
+  proposes an all-out session, a quiet one that never acts), so a change that lets an unsafe
+  plan through fails the build without any API cost.
+
+Daily runs also record model calls, tokens and seconds with each plan (`agent_usage`), and the
+job log prints them.
+
 ## AI reasoning engine (optional)
 
 With `ANTHROPIC_API_KEY` set, the morning plan is decided by a Claude model instead of the rule

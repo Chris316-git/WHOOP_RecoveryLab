@@ -198,7 +198,10 @@ class DailyPipeline:
         key = self.settings.anthropic_api_key or "test"
         if mode in ("agent", "shadow"):
             result = self.run_agent(summary, key)
+            u = result.get("usage") or {}
             run.steps.append(f"agent tools: {len(result['trace'])}")
+            run.steps.append(f"agent usage: {u.get('calls', 0)} calls, {u.get('input_tokens', 0)}+"
+                             f"{u.get('output_tokens', 0)} tokens, {u.get('seconds', 0)}s")
         else:
             from src.reasoning.engine import reason
             result = reason(case, summary, key, self.settings.reasoning_model, call=self.reasoning_call)
@@ -225,7 +228,8 @@ class DailyPipeline:
         result = agent.run(case, summary, toolbox, ctx["recent_plans"], yesterday, api_key,
                            self.settings.reasoning_model, call=self.agent_call)
         summary["reasoning_case"] = result["case"]          # stored with the plan: what the agent saw
-        summary["agent"] = dict(notes=result["notes"], trace=result["trace"], revised=result.get("revised", False))
+        summary["agent"] = dict(notes=result["notes"], trace=result["trace"], revised=result.get("revised", False),
+                                usage=result.get("usage"))
         return result
 
     def explain_experiment(self, summary: dict, run: UserRun) -> None:
@@ -299,6 +303,7 @@ class DailyPipeline:
                 evidence=summary.get("reasoning_case"),
                 agent_notes=(summary.get("agent") or {}).get("notes") or None,
                 agent_trace=(summary.get("agent") or {}).get("trace") or None,
+                agent_usage=(summary.get("agent") or {}).get("usage") or None,
             )], ["user_id", "day"])
             session.commit()
         return "open"

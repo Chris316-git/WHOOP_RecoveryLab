@@ -216,6 +216,7 @@ class DailyPlan(Base):
     evidence: Mapped[dict | None] = mapped_column(JSONB)           # the case file the AI saw
     agent_notes: Mapped[list | None] = mapped_column(JSONB)        # the agent's notes to itself for tomorrow
     agent_trace: Mapped[list | None] = mapped_column(JSONB)        # tools the agent called (names and inputs)
+    agent_usage: Mapped[dict | None] = mapped_column(JSONB)        # model calls, tokens and seconds for the run
     # response
     response: Mapped[str | None] = mapped_column(String(16))       # None | added | dismissed | not_useful
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

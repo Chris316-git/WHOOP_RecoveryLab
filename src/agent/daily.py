@@ -21,6 +21,7 @@ Learn    The plan, the agent's tool trace and its notes for tomorrow are stored.
 A plain loop over the Messages API: no agent framework.
 """
 import json
+import time
 from collections.abc import Callable
 
 from src.coach.agent import SPECS, Toolbox
@@ -103,11 +104,18 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
     messages = [dict(role="user", content=json.dumps(case, ensure_ascii=False))]
     trace: list[dict] = []
     revised = False
+    usage = dict(calls=0, input_tokens=0, output_tokens=0, seconds=0.0)
+    attempts: list[dict] = []     # every final answer the model gave, with the checks' verdict
     record = dict(status="error", problems=[], output=None, focus=None, proposal=None, notes=[], trace=trace,
-                  case=case)
+                  case=case, usage=usage, attempts=attempts)
     try:
         for _ in range(MAX_TOOL_ROUNDS + 3):
+            started = time.monotonic()
             response = call(messages)
+            usage["seconds"] = round(usage["seconds"] + time.monotonic() - started, 2)
+            usage["calls"] += 1
+            for k in ("input_tokens", "output_tokens"):
+                usage[k] += int((response.get("usage") or {}).get(k) or 0)
             content = response.get("content", [])
             calls = [b for b in content if b.get("type") == "tool_use"]
             if calls and len(trace) < MAX_TOOL_ROUNDS * 2:
@@ -134,6 +142,7 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
                 rp = repeat_problem(output, recent_plans, yesterday)
                 notes, note_problems = check_notes(output, case)
                 problems = problems + ([rp] if rp else []) + note_problems
+            attempts.append(dict(output=output, problems=problems))
             if problems and not revised:
                 revised = True
                 messages.append(dict(role="assistant", content=content))

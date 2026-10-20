@@ -31,6 +31,7 @@ ADDED_COLUMNS = [
     ("daily_plans", "evidence", "JSONB"),
     ("daily_plans", "agent_notes", "JSONB"),
     ("daily_plans", "agent_trace", "JSONB"),
+    ("daily_plans", "agent_usage", "JSONB"),
     ("experiments", "proposed_on", "DATE"),
     ("experiments", "reason", "TEXT"),
     ("experiments", "next_step", "VARCHAR(16)"),

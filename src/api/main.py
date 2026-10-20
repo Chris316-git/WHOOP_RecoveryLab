@@ -265,7 +265,8 @@ async def coach_message(token: str, request: Request):
         print(f"coach: {type(exc).__name__}")   # never the conversation
         return {"error": "The coach is not available right now. Try again in a minute."}
     print(f"coach: tools={len(result['tools_used'])} proposals={len(result['proposals'])} "
-          f"remembered={len(result.get('remembered') or [])} checked={result['checked']}")
+          f"remembered={len(result.get('remembered') or [])} sources={len(result.get('sources') or [])} "
+          f"checked={result['checked']}")
     return result
 
 

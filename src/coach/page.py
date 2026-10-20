@@ -20,7 +20,7 @@ header{padding:16px 16px 8px}.brand{font-size:13px;font-weight:700;letter-spacin
 .msg{max-width:88%;margin:10px 0;padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word}
 .bot{background:var(--card);border:1px solid var(--line);border-top-left-radius:6px}
 .me{background:var(--me);color:var(--meink);margin-left:auto;border-top-right-radius:6px}
-.meta{font-size:12px;color:var(--muted);margin:-4px 0 6px 4px}
+.meta{font-size:12px;color:var(--muted);margin:-4px 0 6px 4px}.meta a{color:var(--muted)}
 .prop{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:8px 0;max-width:88%}
 .prop b{display:block}.prop .why{font-size:13px;color:var(--muted);margin-top:2px}
 button{font:inherit;cursor:pointer}
@@ -87,6 +87,16 @@ function send(text){
     if(r.tools_used && r.tools_used.length) notes.push('checked: ' + Array.from(new Set(r.tools_used)).join(', ').replace(/_/g,' '));
     if(!r.checked) notes.push('some numbers could not be verified against your data');
     if(notes.length) log.appendChild(el('div','meta', notes.join(' · ')));
+    if(r.sources && r.sources.length){
+      var src = el('div','meta','Sources: ');
+      r.sources.forEach(function(s, i){
+        if(i) src.appendChild(document.createTextNode(' · '));
+        var a = el(s.url ? 'a' : 'span', null, s.title + ' (' + s.source + ')');
+        if(s.url){ a.href = s.url; a.target = '_blank'; a.rel = 'noopener'; }
+        src.appendChild(a);
+      });
+      log.appendChild(src);
+    }
     (r.remembered || []).forEach(remembered);
     (r.proposals || []).forEach(proposal);
   }).catch(function(){ typing.remove(); log.appendChild(el('div','msg bot','Network error. Try again.')); history_.pop(); })

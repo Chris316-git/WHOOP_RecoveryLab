@@ -41,6 +41,9 @@ class Settings:
     whoop_client_secret: str = ""             # also signs WHOOP's webhooks
     github_dispatch_token: str = ""           # web host only: starts the daily workflow on a WHOOP webhook
     github_repo: str = ""                     # e.g. owner/repo
+    voyage_api_key: str = ""                  # optional: dense retrieval over the knowledge base
+    voyage_model: str = "voyage-4-lite"
+    voyage_url: str = "https://ai.mongodb.com/v1/embeddings"
 
     @property
     def actions_enabled(self) -> bool:
@@ -69,6 +72,9 @@ class Settings:
             whoop_client_secret=get("WHOOP_CLIENT_SECRET"),
             github_dispatch_token=get("GITHUB_DISPATCH_TOKEN"),
             github_repo=get("GITHUB_REPO"),
+            voyage_api_key=get("VOYAGE_API_KEY"),
+            voyage_model=get("VOYAGE_MODEL", "voyage-4-lite"),
+            voyage_url=get("VOYAGE_URL", "https://ai.mongodb.com/v1/embeddings"),
         )
 
     def require(self, name: str) -> str:

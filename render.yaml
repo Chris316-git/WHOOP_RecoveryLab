@@ -32,3 +32,6 @@ services:
       # The coach chat (/coach/<link from the email>) calls Claude from here
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional: dense retrieval for the coach's knowledge search (BM25 is used without it)
+      - key: VOYAGE_API_KEY
+        sync: false

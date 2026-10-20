@@ -202,6 +202,30 @@ Messages API, no framework) that runs when WHOOP reports last night's score:
 
 `REASONING_MODE=ai` uses the single-call engine described next instead.
 
+## Knowledge base (RAG)
+
+Claims about your own data are checked against computed evidence; general health knowledge
+("why screens before bed matter", "when to stop caffeine") used to come from the model's memory,
+unsourced. Now both agents look it up with a `search_guidelines` tool in `knowledge/`: short
+cards paraphrased from named sources (AASM, a meta-analysis on evening exercise, sports-science
+papers on training load and HRV) plus cards that explain Recovery Lab's own methods. Each result
+becomes evidence the reply must cite, so the numbers in a general claim are checked too, and the
+coach shows the sources under its answer.
+
+- **Retrieval** (`src/knowledge/retrieval.py`): chunks at the cards' sections; **BM25**; optional
+  **dense** search with Voyage embeddings; **hybrid** by reciprocal rank fusion. With a few dozen
+  chunks an exact in-memory index is the right store (a vector database such as pgvector pays off
+  at thousands of chunks). Chunk embeddings are built once and cached with a content hash.
+- **Evaluation** (`src/evals/retrieval.py`, `make eval-retrieval`): 30 labeled questions, several
+  worded without the cards' vocabulary ("phone" for screens, "HIIT" for exercise); hit@1, hit@3
+  and MRR per mode, written to `evals/RETRIEVAL.md`. BM25 alone: hit@3 90%, MRR 0.72; CI keeps a
+  floor so a change to the cards or the tokenizer cannot silently break search.
+
+Optional setup for dense search: get a Voyage API key (via MongoDB Atlas), add `VOYAGE_API_KEY` to
+`.env` (and to Render for the coach), then `make knowledge-index` and `make eval-retrieval`. Without
+a key everything works with BM25. To add knowledge, add a card in `knowledge/` (front matter: id,
+title, topic, source, url), written in your own words, and rebuild the index.
+
 ## Evaluating the agent offline
 
 `make eval` runs the production daily agent (same prompt, tools and validator) on synthetic

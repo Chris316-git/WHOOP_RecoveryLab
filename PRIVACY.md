@@ -137,6 +137,10 @@ validation result are stored with the day's plan so the AI can be evaluated agai
 Without a key, nothing is sent. Anthropic's handling of API data is described in its own
 privacy policy.
 
+**Knowledge search (optional dense mode):** if a Voyage API key is set, the public knowledge cards
+and the search queries are sent to the Voyage embeddings API. The agents are instructed to write
+general queries (e.g. "caffeine timing and sleep") without personal numbers; nothing else is sent.
+
 **Personal memory:** goals, preferences, constraints and corrections you tell the coach are
 stored as short text items (only what you said, never health conditions or medication), shown
 in the chat when saved, and read by the daily agent and the coach. Each can be forgotten with

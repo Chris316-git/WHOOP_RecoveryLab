@@ -1,4 +1,4 @@
-.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings demo coach-link memory eval test
+.PHONY: setup server init-db sync-whoop connect-google sync-calendar sync gen-key migrate-tokens daily daily-now report-preview settings demo coach-link memory eval knowledge-index eval-retrieval test
 
 setup:            ## Install dependencies
 	uv sync
@@ -49,6 +49,12 @@ memory:           ## Show or forget what the agent remembers, e.g. make memory A
 
 eval:             ## Evaluate the daily agent on synthetic scenarios, e.g. make eval ARGS="--per-family 2"
 	uv run python scripts/evaluate_agent.py $(ARGS)
+
+knowledge-index:  ## Embed the knowledge base for dense search (needs VOYAGE_API_KEY)
+	uv run python scripts/knowledge.py index
+
+eval-retrieval:   ## Hit@k and MRR of knowledge search -> evals/RETRIEVAL.md
+	uv run python scripts/knowledge.py eval
 
 test:
 	uv run pytest -q

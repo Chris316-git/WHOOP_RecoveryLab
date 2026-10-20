@@ -171,5 +171,6 @@ def run(case: dict, summary: dict, toolbox: Toolbox, recent_plans: list[dict], y
             return record
         record["problems"] = ["too many steps"]
     except Exception as exc:
-        record["problems"] = [type(exc).__name__]
+        from src.coach.agent import describe_error
+        record["problems"] = [describe_error(exc)]
     return record

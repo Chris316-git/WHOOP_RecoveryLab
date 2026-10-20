@@ -187,3 +187,28 @@ def test_coach_remembers_corrections_and_reads_history():
     assert plans[0]["response"] == "dismissed" and plans[0]["agent_notes"] == ["Bedtime drifting later."]
     assert Toolbox(data).run("get_memory", {})["memories"][0]["text"].startswith("Evening")
     assert Toolbox(data).run("remember", dict(kind="diagnosis", text="x"))["ok"] is False
+
+
+def test_api_retries_rate_limits_and_names_other_errors(monkeypatch):
+    import pytest
+    httpx = pytest.importorskip("httpx")
+
+    from src.coach.agent import ApiError, call_messages
+
+    class R:
+        def __init__(self, code, body, headers=None):
+            self.status_code, self._body, self.headers = code, body, headers or {}
+
+        def json(self):
+            return self._body
+
+    queue = [R(429, {"error": {"type": "rate_limit_error"}}, {"retry-after": "1"}), R(200, {"content": []})]
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: queue.pop(0))
+    waits = []
+    assert call_messages("k", "m", "s", [], [], sleep=waits.append) == {"content": []} and waits == [1.0]
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: R(400, {"error": {"type": "invalid_request_error"}}))
+    try:
+        call_messages("k", "m", "s", [], [], sleep=waits.append)
+        raise AssertionError("no error raised")
+    except ApiError as exc:
+        assert str(exc) == "HTTP 400 invalid_request_error"

@@ -243,17 +243,45 @@ def check_reply(text: str, sources: list[str]) -> list[str]:
     return problems
 
 
+RETRY_STATUS = {429, 500, 502, 503, 504, 529}   # rate limited or overloaded: wait and try again
+
+
+class ApiError(RuntimeError):
+    """An API refusal, described without any request content (e.g. "HTTP 429 rate_limit_error")."""
+
+
+def describe_error(exc: Exception) -> str:
+    return str(exc) if isinstance(exc, ApiError) else type(exc).__name__
+
+
 def call_messages(api_key: str, model: str, system: str, messages: list[dict], tools: list[dict],
-                  timeout: float = 60.0) -> dict:
-    """One Messages API call with tools; returns the response JSON."""
+                  timeout: float = 60.0, retries: int = 4, sleep=None) -> dict:
+    """One Messages API call with tools; returns the response JSON. Retries rate limits and
+    overloads with backoff (honoring retry-after); other refusals raise ApiError right away."""
+    import time
+
     import httpx
 
     from src.llm.wording import API_URL, API_VERSION
-    resp = httpx.post(API_URL, timeout=timeout, headers={
-        "x-api-key": api_key, "anthropic-version": API_VERSION, "content-type": "application/json",
-    }, json=dict(model=model, max_tokens=4000, system=system, messages=messages, tools=tools))
-    resp.raise_for_status()
-    return resp.json()
+    sleep = sleep or time.sleep
+    for attempt in range(retries + 1):
+        resp = httpx.post(API_URL, timeout=timeout, headers={
+            "x-api-key": api_key, "anthropic-version": API_VERSION, "content-type": "application/json",
+        }, json=dict(model=model, max_tokens=4000, system=system, messages=messages, tools=tools))
+        if resp.status_code < 400:
+            return resp.json()
+        try:
+            kind = (resp.json().get("error") or {}).get("type", "")
+        except Exception:
+            kind = ""
+        if resp.status_code in RETRY_STATUS and attempt < retries:
+            try:
+                wait = float(resp.headers.get("retry-after", ""))
+            except ValueError:
+                wait = 2.0 * 2 ** attempt
+            sleep(min(60.0, wait))
+            continue
+        raise ApiError(f"HTTP {resp.status_code} {kind}".strip())
 
 
 def clean_history(history: list[dict], max_turns: int = 20, max_chars: int = 2000) -> list[dict]:

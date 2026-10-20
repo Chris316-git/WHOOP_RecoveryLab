@@ -51,7 +51,8 @@ class Scenario:
 
 
 def _panel(rng: random.Random, *, sleep_min=450.0, last7_sleep=None, hrv=110.0, last7_hrv=None, rhr=54.0,
-           load=10.0, last7_load=None, recovery=68.0, last_recovery=None, bedtime=(23, 15)) -> pd.DataFrame:
+           load=10.0, last7_load=None, recovery=68.0, last_recovery=None, last_load=None,
+           bedtime=(23, 15)) -> pd.DataFrame:
     days = [TODAY - timedelta(days=k) for k in range(DAYS, 0, -1)]
     n = len(days)
 
@@ -79,6 +80,8 @@ def _panel(rng: random.Random, *, sleep_min=450.0, last7_sleep=None, hrv=110.0, 
         df.loc[last7, "load"] = [max(0.0, v) for v in (last7_load + rng.gauss(0, 1) for _ in last7)]
     if last_recovery is not None:
         df.loc[days[-1], "recovery_score"] = last_recovery
+    if last_load is not None:
+        df.loc[days[-1], "load"] = last_load
     num = df.columns.drop("sleep_start_local")
     df[num] = df[num].round(1)
     return df
@@ -144,7 +147,8 @@ def family_builders():
     """family -> (description, builder(rng) -> kwargs for _build)."""
     return {
         "typical_day": ("Everything in the usual range, ordinary workday: nothing needs to change.",
-                        lambda r: dict(panel=_panel(r, sleep_min=485, recovery=58), events=_events(WORKDAY),
+                        lambda r: dict(panel=_panel(r, sleep_min=485, recovery=58, last_recovery=59, last_load=9.0),
+                                       events=_events(WORKDAY),
                                        expect=dict(expect_none=True))),
         "sleep_debt": ("About 80 min short of sleep need every night this week.",
                        lambda r: dict(panel=_panel(r, last7_sleep=385, last_recovery=48), events=_events(WORKDAY),

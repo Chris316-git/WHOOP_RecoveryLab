@@ -32,7 +32,8 @@ from src.settings import Settings
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--no-sync", action="store_true", help="use the data already in the database")
-    parser.add_argument("--question", default="Fit a workout in this week", help="what to ask the coach")
+    parser.add_argument("--question", default="I want to fall asleep earlier. What should I change this week?",
+                        help="what to ask the coach")
     parser.add_argument("--no-coach", action="store_true", help="leave out the coach exchange")
     args = parser.parse_args()
 
@@ -78,7 +79,20 @@ def main() -> None:
         result = chat([dict(role="user", content=args.question)], toolbox, settings.anthropic_api_key,
                       settings.reasoning_model)
         coach = dict(question=args.question, reply=result["reply"], tools_used=result["tools_used"],
-                     proposals=result["proposals"], checked=result["checked"])
+                     proposals=result["proposals"], checked=result["checked"], sources=result.get("sources") or [])
+
+    print("Scoring knowledge retrieval...")
+    from src.evals.retrieval import QUERIES, evaluate
+    from src.knowledge.retrieval import get_index
+    index = get_index(settings)
+    labels = dict(bm25="Keyword (BM25)", dense=f"Dense ({settings.voyage_model})", hybrid="Hybrid (RRF)")
+    modes = ["bm25"] + (["dense", "hybrid"] if index.dense_ready else [])
+    if index.dense_ready:
+        index.prime([q for q, _ in QUERIES])
+    retrieval = [dict(evaluate(index, m), label=labels[m]) for m in modes]
+    from src.demo.page import parse_report
+    report = config.PROJECT_ROOT / "evals" / "REPORT.md"
+    agent_eval = parse_report(report.read_text()) if report.exists() else None
 
     print("Running the simulation checks...")
     snapshot = dict(
@@ -86,7 +100,8 @@ def main() -> None:
         email_html=email_html, case=case, reasoning=reasoning, rule_focus=rule_focus,
         model=settings.reasoning_model,
         stress=stress_test(reasoning.get("output"), case, dict(summary, focus=rule_focus)),
-        agent=summary.get("agent"), coach=coach,
+        agent=summary.get("agent"), coach=coach, retrieval=retrieval, chunks=len(index.chunks),
+        agent_eval=agent_eval,
         experiment=experiment_progress(experiments, answers, panel, now.date()),
         calibration=calibration(), power=power(), example_card=example_card(),
     )

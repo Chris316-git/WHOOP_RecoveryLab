@@ -2,8 +2,9 @@
 
 It shows one day of the real pipeline: the morning brief, the daily agent's loop (what it
 observed, the tools it called, the validator's verdict, its notes for tomorrow), the numbered
-evidence and its reply, the validator catching tampered replies, one real coach exchange, the
-running experiment, and the simulation checks of the statistics.
+evidence and its reply, the validator catching tampered replies, one real coach exchange with
+the sources it retrieved, the retrieval and agent evaluations, the running experiment, and the
+simulation checks of the statistics.
 
 What it never contains: action links (buttons are inert), calendar event titles (only
 busy/free time ever leaves the calendar module), email addresses or user ids. The script
@@ -197,6 +198,12 @@ def _coach(snapshot: dict) -> str:
         f'<div class="prop"><b>{escape(p["day"])} · {escape(p["start"])}-{escape(p["end"])}</b>'
         f'<div>{escape(p["title"])}</div><div class="small muted">{escape(p.get("why") or "")}</div>'
         f'<span class="fake">Add to calendar</span></div>' for p in c.get("proposals") or [])
+    srcs = "".join(
+        f'<li>{escape(s["title"])} <span class="muted">({escape(s["source"])})</span></li>'
+        if not s.get("url") else
+        f'<li><a href="{escape(s["url"])}">{escape(s["title"])}</a> <span class="muted">({escape(s["source"])})</span>'
+        f'</li>' for s in c.get("sources") or [])
+    srcs = f'<div class="small" style="margin-top:8px"><b>Sources it retrieved</b><ul>{srcs}</ul></div>' if srcs else ""
     flag = "" if c.get("checked", True) else ('<div class="small muted">Some numbers could not be verified; the '
                                               'page would show this note.</div>')
     return ('<section><h2>3. The coach: ask it anytime</h2><p class="muted">The email links to a chat with the same '
@@ -205,7 +212,66 @@ def _coach(snapshot: dict) -> str:
             'A real exchange from this snapshot:</p>'
             f'<div class="card chat"><div class="me">{escape(c["question"])}</div>'
             f'<div class="bot">{escape(c["reply"])}</div><div class="small muted">tools it chose: {escape(used)}'
-            f'</div>{flag}{props}</div></section>')
+            f'</div>{flag}{srcs}{props}</div></section>')
+
+
+def parse_report(md: str) -> dict | None:
+    """The first table of evals/REPORT.md: {"models": [...], "rows": {label: [values]}}."""
+    lines = [ln for ln in md.splitlines() if ln.startswith("|")]
+    if len(lines) < 3:
+        return None
+    cells = lambda ln: [c.strip().strip("*") for c in ln.strip("|").split("|")]  # noqa: E731
+    head = cells(lines[0])
+    rows = {}
+    for ln in lines[2:]:
+        if ln.startswith("|---"):
+            break
+        c = cells(ln)
+        if c[0] in ("Metric", "Type"):
+            break
+        rows[c[0]] = c[1:]
+    return dict(models=head[1:], rows=rows)
+
+
+EVAL_ROWS = ["Scenarios", "First answer passes every check", "Passes after at most one revision",
+             "Shown plan breaks a safety expectation", "Repeats injected text (while refusing it)",
+             "Respects a constraint from memory", "Unnecessary action on a normal day", "Latency p50 (s)",
+             "Input tokens per run"]
+
+
+def _measured(snapshot: dict) -> str:
+    ret, ev = snapshot.get("retrieval") or [], snapshot.get("agent_eval")
+    if not ret and not ev:
+        return ""
+    ret_html = ""
+    if ret:
+        body = "".join(f'<tr><td>{escape(r["label"])}</td><td>{100 * r["hit_at_1"]:.0f}%</td>'
+                       f'<td>{100 * r["hit_at_k"]:.0f}%</td><td>{r["mrr"]:.2f}</td></tr>' for r in ret)
+        ret_html = (f'<div class="card"><h3>Knowledge retrieval (RAG)</h3><p class="small">General health facts come '
+                    f'from {snapshot.get("chunks", "a few dozen")} curated passages, each paraphrased from a named '
+                    f'source and cited in the reply. Which search to use was decided on '
+                    f'{ret[0]["queries"]} labeled questions, several worded without the passages\' vocabulary:</p>'
+                    f'<div class="scroll"><table><tr><th>Search</th><th>Hit@1</th><th>Hit@3</th><th>MRR</th></tr>'
+                    f'{body}</table></div><p class="small muted" style="margin-top:8px">Hit@k: the right passage is '
+                    f'among the top k. Keyword search missed paraphrases ("Instagram" for screens), and equal-weight '
+                    f'fusion let those misses pull dense hits down, so the agents use dense search.</p></div>')
+    ev_html = ""
+    if ev:
+        models = ev["models"]
+        head = "".join(f"<th>{escape(m.replace('claude-', ''))}</th>" for m in models)
+        body = "".join(f'<tr><td>{escape(label)}</td>' + "".join(f"<td>{escape(v)}</td>" for v in ev["rows"][label])
+                       + "</tr>" for label in EVAL_ROWS if label in ev["rows"])
+        ev_html = (f'<div class="card"><h3>Agent evaluation</h3><p class="small">The production agent, prompts and '
+                   f'validator on synthetic mornings in 10 families (sleep debt, hard streaks, a packed calendar, '
+                   f'advice ignored yesterday, an experiment night, a prompt injection planted in memory...). '
+                   f'"Shown" is what the user would receive after the checks.</p>'
+                   f'<div class="scroll"><table><tr><th>Metric</th>{head}</tr>{body}</table></div>'
+                   f'<p class="small muted" style="margin-top:8px">Both models kept every shown plan safe; the larger '
+                   f'model needed far fewer revisions, so the daily agent uses it. CI reruns the harness with scripted '
+                   f'models so a guardrail regression fails the build.</p></div>')
+    return ('<section><h2>4. Measured, not eyeballed</h2><p class="muted">Design choices on this page come from '
+            'offline evaluations that anyone can rerun (<code>make eval</code>, <code>make eval-retrieval</code>).</p>'
+            f'<div class="grid two">{ret_html}{ev_html}</div></section>')
 
 
 def _ai_reply(snapshot: dict) -> str:
@@ -305,14 +371,15 @@ def _stats(snapshot: dict) -> str:
 
 def build_page(snapshot: dict) -> str:
     """snapshot: date, time, timezone, email_html, case, reasoning, rule_focus, model, stress,
-    agent (notes, trace, revised), coach (question, reply, tools_used, proposals), experiment,
-    calibration, power, example_card."""
+    agent (notes, trace, revised), coach (question, reply, tools_used, proposals, sources),
+    retrieval (list of retrieval-eval results with labels), chunks, agent_eval (parse_report),
+    experiment, calibration, power, example_card."""
     pipeline = "".join(
         ('<span class="arrow">&rarr;</span>' if i else "") + f'<div class="step"><b>{a}</b>{escape(b)}</div>'
         for i, (a, b) in enumerate([
             ("Trigger", "WHOOP webhook when the night is scored"),
             ("Analyse", "Python: baselines, trends, load, sleep debt"),
-            ("Observe", "evidence, memory, yesterday's notes, tools"),
+            ("Observe", "evidence, memory, notes, tools, cited knowledge"),
             ("Reason", "Claude decides; code validates"),
             ("Act", "email; calendar only after a tap"),
             ("Learn", "responses, outcomes, notes, corrections"),
@@ -328,7 +395,8 @@ def build_page(snapshot: dict) -> str:
         'what actually works</h1>'
         '<p class="lead">Every morning, as soon as WHOOP scores the night, an agent reads Python-computed evidence, '
         'its memory of you and its own notes from yesterday, calls tools when it needs more, and decides on one '
-        'action, or none. Code checks every claim. A coach chat and randomized N-of-1 experiments close the loop.'
+        'action, or none. Code checks every claim; general health facts come from a cited knowledge base. A coach '
+        'chat and randomized N-of-1 experiments close the loop, and every design choice is backed by an evaluation.'
         '</p>'
         f'<div class="links"><a href="{REPO_URL}">Source on GitHub</a>'
         f'<a href="{REPO_URL}/blob/main/PRIVACY.md">Privacy design</a></div>'
@@ -346,8 +414,8 @@ def build_page(snapshot: dict) -> str:
         f'{_loop(snapshot)}'
         f'<div class="grid two" style="margin-top:16px">{_evidence(snapshot["case"])}<div>{_ai_reply(snapshot)}'
         f'{_stress(snapshot.get("stress") or [])}</div></div></section>'
-        f'{_coach(snapshot)}'
-        '<section><h2>4. Experiments: does a habit actually help me?</h2><p class="muted">The AI may propose an '
+        f'{_coach(snapshot)}{_measured(snapshot)}'
+        '<section><h2>5. Experiments: does a habit actually help me?</h2><p class="muted">The AI may propose an '
         'experiment from a fixed list when the data makes it relevant; randomization, adherence and statistics stay '
         'in code. The verdict is pre-specified: helped, worse, no meaningful effect, or inconclusive.</p>'
         f'{_experiment(snapshot)}{_stats(snapshot)}</section>'

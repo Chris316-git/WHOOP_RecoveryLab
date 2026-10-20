@@ -1,25 +1,31 @@
 # Recovery Lab
 
-**Find out what actually works for your body, using your own data.**
+**A personal health agent that reasons over your own wearable and calendar data, remembers what
+you tell it, and tests what actually works for you.**
 
-Wearables tell you how you slept. Chatbots can guess why. Recovery Lab runs
-structured **N-of-1 experiments** on your wearable data to estimate the *causal*
-effect of a habit change (e.g. "no caffeine after 2pm") on sleep and recovery,
-and schedules its recommendations around the time you actually have free.
+Wearables tell you how you slept. Chatbots can guess why, but they invent numbers and forget you
+by tomorrow. Recovery Lab runs a daily agent on your WHOOP and Google Calendar data: as soon as last
+night is scored, it reads evidence computed in Python, its memory of you and its own notes from
+yesterday, calls tools when it needs more, and suggests one concrete step that fits your free time,
+or decides nothing needs to change. Code checks every claim before you see it, general health facts
+come from a cited knowledge base, and randomized N-of-1 experiments test whether a habit really
+changes your numbers.
 
 **[Live demo](https://chris316-git.github.io/WHOOP_RecoveryLab/)**: one day of the real pipeline on
-the author's own data (morning brief, the AI's evidence file and reply, the validator catching
-tampered replies, the running experiment, and simulation checks of the statistics).
+the author's own data: the morning brief, the agent's evidence, tool calls and reply, the validator
+catching tampered replies, a coach exchange with its sources, the retrieval and agent evaluations,
+and the running experiment.
 
 ## What makes it different
 
 | | Wearable app | Chatbot + exported data | Recovery Lab |
 |---|---|---|---|
-| Describes your metrics | Yes | Yes | Yes |
-| Separates cause from coincidence | No | No | **ABAB experiments + statistical modeling** |
-| Numbers computed by | Vendor | LLM (can hallucinate) | **Deterministic stats engine; LLM only explains** |
-| Knows your schedule | No | No | **Calendar-aware recommendations** |
-| Builds long-term knowledge | No | Per chat | **Persistent log of verified personal patterns** |
+| Numbers computed by | Vendor | The LLM (can hallucinate) | **Python; every number in the reply is checked** |
+| General health advice | Generic | From model memory, unsourced | **Retrieved from a curated, cited knowledge base** |
+| Knows your schedule | No | No | **Plans into real free time; calendar only after a tap** |
+| Remembers you | No | Per chat | **Goals, constraints and corrections in personal memory** |
+| Cause vs coincidence | No | No | **Randomized N-of-1 experiments with honest statistics** |
+| How well it works | Unknown | Unknown | **Offline evals: safety, grounding, retrieval, cost** |
 
 ## Architecture
 
@@ -48,22 +54,19 @@ every tool. Nothing outside Recovery Lab changes without a tap from the user.
 
 ## Status
 
-- [x] WHOOP OAuth 2.0 with automatic token refresh
-- [x] Full-history backfill and incremental sync (cycles, recovery, sleep, workouts)
-- [x] Google Calendar sync with daily schedule features
-- [x] Daily morning email: sync, compare last night with your 30-day baseline, list today's free blocks
-- [x] Scheduled cloud job (GitHub Actions) with OAuth tokens encrypted in the database
-- [x] Per-user send time and time zone
-- [x] Personal trends: HRV and resting heart rate vs. your normal range, sleep shortfall, training load, weekday patterns
-- [x] Daily planner: one focus a day (or "nothing to change"), placed in real free time between 07:00 and midnight
-- [x] Suggestions built from your own workout history: the easy or hard version of the activities you actually do, at your usual time
-- [x] Optional one-tap "Add to calendar" (with Undo) for focuses that need a time block, on a dedicated "Recovery Lab" calendar
-- [x] AI reasoning engine (optional): Claude decides the focus and designs the action from a numbered evidence file, a code validator checks every claim, the rule engine is the fallback, and both are stored for evaluation
-- [x] Yesterday's focus checked from wearable data (no check-ins), stored apart from what was scheduled
-- [ ] Feedback loop, the rest: did it help, over many days?
-- [x] Personal experiment engine v0.1: one preset, randomized paired nights, one-tap adherence, randomization test
-- [x] Experiments from the email: AI-suggested (checked), browse page, AI explanation of results, keep / extend / drop
-- [ ] Adaptive personalization: structured AI memory computed in code
+- [x] WHOOP OAuth 2.0 with automatic token refresh; full backfill and incremental sync
+- [x] Google Calendar sync (time blocks only, no titles)
+- [x] Email as soon as WHOOP scores the night (webhook), with a scheduled fallback, per-user time zone
+- [x] Personal baselines and trends: HRV and resting heart rate vs your normal range, sleep debt, training load
+- [x] Rule-based daily planner from your own activity history, as transparent fallback and baseline
+- [x] Daily agent: observe, reason, act, learn, with tools, personal memory and notes across days
+- [x] Code validator: evidence citations, numeric grounding, safety rules, free-time checks, no silent repeats
+- [x] One-tap calendar actions with Undo; outcomes checked from wearable data the next morning
+- [x] Coach chat (tool-using agent): plans into free time, saves goals and corrections to memory
+- [x] Knowledge base with retrieval (BM25, dense embeddings, hybrid), cited in replies
+- [x] Offline evaluation: 80 agent scenarios incl. prompt injection, model comparison, retrieval hit@k / MRR
+- [x] Randomized N-of-1 experiments: paired nights, one-tap adherence, permutation test, simulation-checked
+- [ ] Insights computed in code from many days (beyond what the user states)
 - [ ] Hosted multi-user web app
 
 See [ROADMAP.md](ROADMAP.md) for the plan and the design behind each step.
@@ -200,7 +203,7 @@ Messages API, no framework) that runs when WHOOP reports last night's score:
   "Dismiss" the result page offers "Tell the coach why", and the coach saves the correction
   to memory. `make memory` shows what is remembered and forgets items.
 
-`REASONING_MODE=ai` uses the single-call engine described next instead.
+`REASONING_MODE=ai` uses the single-call engine described further down instead.
 
 ## Knowledge base (RAG)
 
@@ -260,28 +263,6 @@ eyeballed (`src/evals/`).
 Daily runs also record model calls, tokens and seconds with each plan (`agent_usage`), and the
 job log prints them.
 
-## AI reasoning engine (optional)
-
-With `ANTHROPIC_API_KEY` set, the morning plan is decided by a Claude model instead of the rule
-engine, within limits enforced in code:
-
-1. **Evidence builder** (`src/reasoning/evidence.py`): numbered facts computed in Python
-   (today's state, trends vs. your normal range, load, sleep, free time, your activities, and
-   the last 7 days of suggestions, responses and measured outcomes).
-2. **Reasoning** (`src/reasoning/engine.py`): the model decides what matters most today and
-   designs one action, e.g. a smaller step when earlier advice kept not being followed.
-   It returns structured JSON with cited evidence ids, uncertainty and hedged hypotheses.
-3. **Safety validator** (`src/reasoning/validate.py`): cited ids must exist, every number must
-   come from the evidence, no hard session against the data, calendar blocks only in free
-   time and early enough before bedtime, no medical, medication or diet advice. Any failure
-   falls back to the rule engine.
-4. **Evaluation** (`src/reasoning/evaluate.py`, `uv run python scripts/evaluate.py`): pass
-   rate and rejection reasons, blocked unsafe suggestions, agreement with the rules, use of
-   personal context, and responses and outcomes by engine.
-
-`REASONING_MODE=shadow` keeps showing the rules' plan while still recording the AI's, and
-`REASONING_MODE=off` disables it. The calendar is still only written when you tap the button.
-
 ## Coach (agent)
 
 The daily email links to a chat with the coach: tell it what you want to improve, and it
@@ -303,6 +284,28 @@ case file, the coach is a tool-using agent: it decides which tools to call and i
 
 Setup: add `ANTHROPIC_API_KEY` to the web host's environment (Render). The link appears in
 the email once `PUBLIC_BASE_URL` and `ACTION_SIGNING_KEY` are set.
+
+## Single-call reasoning engine (REASONING_MODE=ai)
+
+With `ANTHROPIC_API_KEY` set, the morning plan is decided by a Claude model instead of the rule
+engine, within limits enforced in code:
+
+1. **Evidence builder** (`src/reasoning/evidence.py`): numbered facts computed in Python
+   (today's state, trends vs. your normal range, load, sleep, free time, your activities, and
+   the last 7 days of suggestions, responses and measured outcomes).
+2. **Reasoning** (`src/reasoning/engine.py`): the model decides what matters most today and
+   designs one action, e.g. a smaller step when earlier advice kept not being followed.
+   It returns structured JSON with cited evidence ids, uncertainty and hedged hypotheses.
+3. **Safety validator** (`src/reasoning/validate.py`): cited ids must exist, every number must
+   come from the evidence, no hard session against the data, calendar blocks only in free
+   time and early enough before bedtime, no medical, medication or diet advice. Any failure
+   falls back to the rule engine.
+4. **Evaluation** (`src/reasoning/evaluate.py`, `uv run python scripts/evaluate.py`): pass
+   rate and rejection reasons, blocked unsafe suggestions, agreement with the rules, use of
+   personal context, and responses and outcomes by engine.
+
+`REASONING_MODE=shadow` keeps showing the rules' plan while still recording the AI's, and
+`REASONING_MODE=off` disables it. The calendar is still only written when you tap the button.
 
 ## Personal experiments (v0.1)
 
@@ -354,12 +357,20 @@ src/
   settings.py  Runtime settings as one immutable object (from .env / environment)
   actions/     Add to calendar / Change time / Dismiss / Undo: signed links, calendar writes, pages
   experiments/ Personal experiments: presets, randomized schedule, analysis, the email card
-  reasoning/   AI reasoning engine: evidence builder, LLM call, safety validator, evaluation report
+  reasoning/   Evidence builder, single-call engine and the safety validator shared by both agents
+  agent/       The daily agent loop: observe, reason, act, learn
+  coach/       The coach agent: tools, chat loop, signed proposals, chat page
+  memory/      Personal memory: goals, preferences, constraints, corrections (forgettable)
+  knowledge/   Retrieval over the cited knowledge base: chunking, BM25, embeddings, fusion
+  evals/       Offline evaluation: agent scenarios and metrics, retrieval questions
+  demo/        The public demo page (docs/index.html)
   llm/         Claude API helper and the wording fallback for rule-based plans
-  api/         FastAPI app: WHOOP login flow and the action endpoint
+  api/         FastAPI app: WHOOP login, action links, coach endpoints, WHOOP webhook
+knowledge/     The knowledge cards (Markdown with source and URL) and their cached embeddings
+evals/         Evaluation reports (REPORT.md, RETRIEVAL.md)
 scripts/       Thin command-line entry points (daily.py runs the pipeline)
-.github/       GitHub Actions workflow for the daily job
-tests/         Unit tests for the pure logic, plus an end-to-end pipeline test on in-memory SQLite
+.github/       GitHub Actions workflows: the daily job and the test suite
+tests/         Unit tests for the pure logic, the agents with scripted models, and end-to-end tests on SQLite
 ```
 
 ### Design for reuse

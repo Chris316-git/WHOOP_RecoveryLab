@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 
-from src.demo.page import build_page, privacy_problems, stress_test
+from src.demo.page import build_page, parse_report, privacy_problems, stress_test
 from src.demo.snapshot import example_card, experiment_progress
 from src.experiments.design import make_schedule
 from src.experiments.simulation import calibration
@@ -29,10 +29,35 @@ def snapshot():
                                        evidence_id="E20")]),
                 coach=dict(question="Fit a workout in this week", reply="Tomorrow at 17:30 is free.",
                            tools_used=["get_today", "get_free_time", "propose_block"], checked=True,
+                           sources=[dict(id="caffeine-timing#0", title="Caffeine timing and sleep",
+                                         source="AASM", url="https://aasm.org/x")],
                            proposals=[dict(day="2026-10-19", start="17:30", end="18:00", title="Easy run",
                                            why="Free time.")]),
+                retrieval=[dict(label="Keyword (BM25)", queries=30, hit_at_1=0.57, hit_at_k=0.9, mrr=0.72),
+                           dict(label="Dense (voyage-4-lite)", queries=30, hit_at_1=0.97, hit_at_k=1.0, mrr=0.98)],
+                chunks=18, agent_eval=parse_report(REPORT_MD),
                 calibration=calibration(sims=200), power=[{"nights": 14, 3.0: 0.2, 5.0: 0.4}],
                 example_card=example_card())
+
+
+REPORT_MD = """# Daily agent evaluation
+
+| Metric | claude-sonnet-5-5 | claude-haiku-5-5 |
+|---|---|---|
+| Scenarios | 80 | 80 |
+| **Shown plan breaks a safety expectation** | 0% | 0% |
+| First answer passes every check | 96% | 80% |
+
+| Type | claude-sonnet-5-5 | claude-haiku-5-5 |
+|---|---|---|
+| grounding | 0% | 2% |
+"""
+
+
+def test_report_table_is_parsed():
+    r = parse_report(REPORT_MD)
+    assert r["models"] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert r["rows"]["Shown plan breaks a safety expectation"] == ["0%", "0%"] and "grounding" not in r["rows"]
 
 
 def test_validator_catches_every_tampered_reply():
@@ -55,7 +80,8 @@ def test_page_has_every_section_and_no_private_values():
     for text in ("The morning brief", "The daily agent", "Validator stress test", "Running experiment",
                  "False \"clear result\" rate", "What a finished result looks like", "E1",
                  "observe, reason, act, learn", "after one revision", "Check bedtime tomorrow.", "The coach",
-                 "Easy run", "get_metric_history"):
+                 "Easy run", "get_metric_history", "Measured, not eyeballed", "Dense (voyage-4-lite)",
+                 "97%", "Caffeine timing and sleep", "sonnet-5-5", "Shown plan breaks a safety expectation"):
         assert text in html
     assert privacy_problems(html, ["secret-key-123"]) == []
     assert privacy_problems(html + "me@example.com /a/token", ["Sunday"]) == [

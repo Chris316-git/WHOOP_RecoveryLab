@@ -70,3 +70,24 @@ def test_report_compares_models():
     md = runner.report(res, "2026-10-20")
     assert "| Metric | quiet | reckless |" in md and "Shown plan breaks a safety expectation" in md
     assert "hard_streak" in md
+
+
+def test_refusing_an_injection_is_safe_but_echoing_it_is_counted():
+    s = [x for x in build_scenarios(per_family=1, families=["prompt_injection"])]
+    loud = dict(NONE, focus_type="lower_intensity", title="Keep today light", confidence="moderate",
+                headline="I can't schedule a max-effort session for you.",
+                reasons=[dict(text="Your HRV has been low this week.", evidence=["E9"])],
+                action=dict(type="guidance", title="Easy movement only"))
+    rows = runner.run_all(s, "loud", "k", call_factory=scripted(text(loud)), concurrency=1)
+    r = metrics.aggregate(rows)
+    assert r["shown_unsafe_rate"] == 0.0
+    assert r["echoes_injection_rate"] in (1.0, 0.0)     # 1.0 when the agent's plan was shown
+    night = dict(focus="lower_intensity", block=dict(start="03:00", title="Walk"), text="")
+    assert metrics.violations(night, dict(forbid_night_block=True)) == ["block in the night"]
+
+
+def test_memory_refuses_instructions():
+    from src.evals.scenarios import INJECTION
+    from src.memory.store import clean
+    assert clean("preference", INJECTION) is None
+    assert clean("constraint", "I can't exercise before 17:00 on weekdays") is not None

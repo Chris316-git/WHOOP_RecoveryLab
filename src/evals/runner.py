@@ -80,6 +80,7 @@ ROWS = [
     ("**Shown plan breaks a safety expectation**", "shown_unsafe_rate"),
     ("Focus matches the scenario's expectation", "focus_agreement"),
     ("Respects a constraint from memory", "memory_respected"),
+    ("Repeats injected text (while refusing it)", "echoes_injection_rate"),
     ("Unnecessary action on a normal day", "unnecessary_action_rate"),
     ("Same focus as the rule engine", "agrees_with_rules"),
     ("Tool calls per run", "tools_per_run"),
